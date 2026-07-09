@@ -69,11 +69,6 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         return
 
     start_loop = st.session_state.last_idx + 1
-
-    if st.session_state.last_idx == 0:
-        st.session_state.base_dir = surf_ddd
-        st.session_state.base_speed_kt = surf_ff
-
     current_x = st.session_state.current_x
     current_y = st.session_state.current_y
 
@@ -90,17 +85,33 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
             dt = ((height_above_stn - prev_height) / rate_ft_min) * 60.0
             layer_factor = height_above_stn / 1000.0
             
+            # OPTIMASI 1: Pemodelan Lapisan Udara Atas Dinamis (Inversion & Shear)
             if season == "timur":
-                dir_shear = -(layer_factor * 3.5)
-                sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-4, 4)) % 360
-                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + (layer_factor * 0.6) + random.uniform(-1, 1))
+                if height_above_stn < 7000:
+                    dir_shear = -(layer_factor * 4.0)
+                    speed_shear = layer_factor * 0.5
+                else:
+                    # Di atas 7000 ft, angin berbelok lebih tajam (efek transisi angin barat)
+                    dir_shear = -(7.0 * 4.0) - ((layer_factor - 7.0) * 12.0)
+                    speed_shear = (7.0 * 0.5) + ((layer_factor - 7.0) * 1.2)
+                
+                sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-6, 6)) % 360
+                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + random.uniform(-1.5, 1.5))
+                
             elif season == "barat":
-                dir_shear = (layer_factor * 2.5)
-                sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-4, 4)) % 360
-                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + (layer_factor * 0.4) + random.uniform(-1, 1))
+                if height_above_stn < 8000:
+                    dir_shear = (layer_factor * 3.0)
+                    speed_shear = layer_factor * 0.4
+                else:
+                    dir_shear = (8.0 * 3.0) + ((layer_factor - 8.0) * 9.0)
+                    speed_shear = (8.0 * 0.4) + ((layer_factor - 8.0) * 1.0)
+                    
+                sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-6, 6)) % 360
+                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + random.uniform(-1.5, 1.5))
             else:
-                sim_dir = (st.session_state.base_dir + random.uniform(-8, 8)) % 360
-                sim_speed_kt = max(2.0, st.session_state.base_speed_kt + random.uniform(-1, 1))
+                # Pancaroba dibuat riak anginnya lebih bergejolak (turbulen)
+                sim_dir = (st.session_state.base_dir + random.uniform(-15, 15)) % 360
+                sim_speed_kt = max(2.0, st.session_state.base_speed_kt + random.uniform(-3, 3))
 
             target_level = math.ceil((idx - 1) / 2) * 1000
             level_target_str = f"Level {target_level} ft"
@@ -120,12 +131,19 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         current_y += speed_ft_sec * math.cos(move_rad) * dt
         
         horizontal_dist = math.hypot(current_x, current_y)
-        azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
         
+        # Hitung sudut murni murni geometri
         if horizontal_dist == 0:
+            azimuth_deg = 0.0
             elevation_deg = 90.0
         else:
+            azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
             elevation_deg = math.degrees(math.atan2(height_above_stn, horizontal_dist))
+
+        # OPTIMASI 2: Efek Jitter Bidikan (Membuat desimal di tabel berfluktuasi alami)
+        if idx > 1:
+            azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4)) % 360
+            elevation_deg = max(0.5, min(89.5, elevation_deg + random.uniform(-0.2, 0.2)))
 
         height_display = "Awal" if idx == 1 else f"{int(height_above_stn)} ft"
         azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
