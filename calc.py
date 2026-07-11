@@ -28,6 +28,14 @@ if 'base_dir' not in st.session_state:
 if 'base_speed_kt' not in st.session_state:
     st.session_state.base_speed_kt = None
 
+# --- TAMBAHAN BARU: Variabel Acak Unik Per Sesi Supaya Dinamis ---
+if 'shear_dir_mult' not in st.session_state:
+    st.session_state.shear_dir_mult = 1.0
+if 'shear_spd_mult' not in st.session_state:
+    st.session_state.shear_spd_mult = 1.0
+if 'wave_phase' not in st.session_state:
+    st.session_state.wave_phase = 0.0
+
 elevation_waingapu = 32.8
 
 # --- HEADER APLIKASI ---
@@ -63,6 +71,11 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         st.session_state.last_idx = 0
         st.session_state.base_dir = surf_ddd
         st.session_state.base_speed_kt = surf_ff
+        
+        # MENENTUKAN KARAKTERISTIK ATMOSFER ACAK UNTUK SESI GENERATE INI
+        st.session_state.shear_dir_mult = random.uniform(0.6, 1.8)
+        st.session_state.shear_spd_mult = random.uniform(0.5, 1.5)
+        st.session_state.wave_phase = random.uniform(0, 2 * math.pi)
 
     if target_readings <= st.session_state.last_idx:
         st.warning(f"Data sudah ter-generate sebanyak {st.session_state.last_idx} baris. Naikkan target untuk melanjutkan.")
@@ -85,33 +98,36 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
             dt = ((height_above_stn - prev_height) / rate_ft_min) * 60.0
             layer_factor = height_above_stn / 1000.0
             
-            # OPTIMASI 1: Pemodelan Lapisan Udara Atas Dinamis (Inversion & Shear)
+            # Efek gelombang atmosfer (membuat arah dan kecepatan meliuk dinamis)
+            wave = 15 * math.sin(layer_factor * 0.6 + st.session_state.wave_phase)
+            
+            # OPTIMASI 1: Pemodelan Lapisan Udara Atas Dinamis Menggunakan Pengacak Sesi
             if season == "timur":
                 if height_above_stn < 7000:
-                    dir_shear = -(layer_factor * 4.0)
-                    speed_shear = layer_factor * 0.5
+                    dir_shear = -(layer_factor * 4.0 * st.session_state.shear_dir_mult)
+                    speed_shear = layer_factor * 0.5 * st.session_state.shear_spd_mult
                 else:
-                    # Di atas 7000 ft, angin berbelok lebih tajam (efek transisi angin barat)
-                    dir_shear = -(7.0 * 4.0) - ((layer_factor - 7.0) * 12.0)
-                    speed_shear = (7.0 * 0.5) + ((layer_factor - 7.0) * 1.2)
+                    dir_shear = -(7.0 * 4.0 * st.session_state.shear_dir_mult) - ((layer_factor - 7.0) * 12.0 * st.session_state.shear_dir_mult)
+                    speed_shear = (7.0 * 0.5 * st.session_state.shear_spd_mult) + ((layer_factor - 7.0) * 1.2 * st.session_state.shear_spd_mult)
                 
-                sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-6, 6)) % 360
-                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + random.uniform(-1.5, 1.5))
+                sim_dir = (st.session_state.base_dir + dir_shear + wave + random.uniform(-6, 6)) % 360
+                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + (wave * 0.15) + random.uniform(-1.5, 1.5))
                 
             elif season == "barat":
                 if height_above_stn < 8000:
-                    dir_shear = (layer_factor * 3.0)
-                    speed_shear = layer_factor * 0.4
+                    dir_shear = (layer_factor * 3.0 * st.session_state.shear_dir_mult)
+                    speed_shear = layer_factor * 0.4 * st.session_state.shear_spd_mult
                 else:
-                    dir_shear = (8.0 * 3.0) + ((layer_factor - 8.0) * 9.0)
-                    speed_shear = (8.0 * 0.4) + ((layer_factor - 8.0) * 1.0)
+                    dir_shear = (8.0 * 3.0 * st.session_state.shear_dir_mult) + ((layer_factor - 8.0) * 9.0 * st.session_state.shear_dir_mult)
+                    speed_shear = (8.0 * 0.4 * st.session_state.shear_spd_mult) + ((layer_factor - 8.0) * 1.0 * st.session_state.shear_spd_mult)
                     
-                sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-6, 6)) % 360
-                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + random.uniform(-1.5, 1.5))
+                sim_dir = (st.session_state.base_dir + dir_shear + wave + random.uniform(-6, 6)) % 360
+                sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + (wave * 0.15) + random.uniform(-1.5, 1.5))
             else:
                 # Pancaroba dibuat riak anginnya lebih bergejolak (turbulen)
-                sim_dir = (st.session_state.base_dir + random.uniform(-15, 15)) % 360
-                sim_speed_kt = max(2.0, st.session_state.base_speed_kt + random.uniform(-3, 3))
+                wave_pancaroba = 25 * math.sin(layer_factor * 0.8 + st.session_state.wave_phase)
+                sim_dir = (st.session_state.base_dir + wave_pancaroba + random.uniform(-12, 12)) % 360
+                sim_speed_kt = max(2.0, st.session_state.base_speed_kt + (wave_pancaroba * 0.2) + random.uniform(-3, 3))
 
             target_level = math.ceil((idx - 1) / 2) * 1000
             level_target_str = f"Level {target_level} ft"
@@ -132,7 +148,7 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         
         horizontal_dist = math.hypot(current_x, current_y)
         
-        # Hitung sudut murni murni geometri
+        # Hitung sudut murni geometri
         if horizontal_dist == 0:
             azimuth_deg = 0.0
             elevation_deg = 90.0
@@ -142,8 +158,8 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
 
         # OPTIMASI 2: Efek Jitter Bidikan (Membuat desimal di tabel berfluktuasi alami)
         if idx > 1:
-            azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4)) % 360
-            elevation_deg = max(0.5, min(89.5, elevation_deg + random.uniform(-0.2, 0.2)))
+            azimuth_deg = (azimuth_deg + random.uniform(-0.5, 0.5)) % 360
+            elevation_deg = max(0.5, min(89.5, elevation_deg + random.uniform(-0.3, 0.3)))
 
         height_display = "Awal" if idx == 1 else f"{int(height_above_stn)} ft"
         azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
@@ -262,14 +278,11 @@ with col_right:
     st.subheader("🔍 Panel Bantuan Ketik Manual")
     
     if st.session_state.generated_records:
-        # Di Streamlit, cara interaksi baris terbaik adalah memunculkan slider/pilihan baris aktif
         readings_list = [r["Pembacaan Ke-"] for r in st.session_state.generated_records]
         selected_row_idx = st.select_slider("Geser/Pilih Nomor Pembacaan:", options=readings_list, value=readings_list[-1])
         
-        # Ambil data spesifik sesuai index yang dipilih di slider
         active_rec = next(item for item in st.session_state.generated_records if item["Pembacaan Ke-"] == selected_row_idx)
         
-        # Menampilkan Box Informasi Font Besar mirip Aplikasi Asli Anda
         st.markdown(
             f"""
             <div style="background-color: #fffdf0; padding: 20px; border-radius: 8px; border: 2px solid #d62828; text-align: center;">
