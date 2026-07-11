@@ -75,54 +75,47 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
     current_x = st.session_state.current_x
     current_y = st.session_state.current_y
     
-    # Baseline kondisi awal untuk kalkulasi berantai (Random Walk)
     running_dir = st.session_state.base_dir
     running_speed = st.session_state.base_speed_kt
 
     for idx in range(start_loop, target_readings + 1):
+        # Setiap indeks pembacaan naik konstan kelipatan 500 ft
+        height_above_stn = idx * 500.0
+        dt = (500.0 / rate_ft_min) * 60.0  # Durasi waktu real antar-lapisan
+
         if idx == 1:
-            height_above_stn = 100.0
-            dt = 10.0
-            sim_dir = running_dir
-            sim_speed_kt = running_speed
-            level_target_str = "Diabaikan (Rilis)"
+            # PENGACAKAN AWAL: Simulasi turbulensi sesaat ketika balon baru dilepas ke udara
+            sim_dir = (running_dir + random.uniform(-15, 15)) % 360
+            sim_speed_kt = max(1.0, running_speed + random.uniform(-2.5, 2.5))
         else:
-            height_above_stn = (idx - 1) * 500.0
-            prev_height = 100.0 if idx == 2 else (idx - 2) * 500.0
-            dt = ((height_above_stn - prev_height) / rate_ft_min) * 60.0
-            
-            # 1. Penentuan Parameter Turbulensi Udara Berdasarkan Ketinggian Lapisan Batas
+            # 1. Parameter Turbulensi Udara Lapisan Atas
             if height_above_stn < 3500:
-                # Lapisan gesekan permukaan bawah: arah bergejolak tajam, kecepatan fluktuatif
-                turb_dir = random.uniform(-22, 22)
-                turb_spd = random.uniform(-3.5, 3.5)
+                turb_dir = random.uniform(-20, 20)
+                turb_spd = random.uniform(-3.0, 3.0)
             else:
-                # Udara bebas: fluktuasi riak kecil, tapi perubahan tren makro konsisten
                 turb_dir = random.uniform(-10, 10)
-                turb_spd = random.uniform(-1.5, 1.5)
+                turb_spd = random.uniform(-1.2, 1.2)
             
-            # 2. Pemodelan Tren Geser Angin Musim (Seasonal Shear Drift) secara Kumulatif
+            # 2. Pemodelan Tren Geser Angin Musim secara Berantai (Markov Random Walk)
             if season == "timur":
-                dir_drift = -random.uniform(1.0, 6.0) # Dominan belok kiri (Veering/Backing)
-                spd_drift = random.uniform(0.2, 1.2)  # Dominan makin kencang di atas
+                dir_drift = -random.uniform(1.0, 6.0)
+                spd_drift = random.uniform(0.2, 1.2)
             elif season == "barat":
-                dir_drift = random.uniform(1.0, 5.0)  # Dominan belok kanan
+                dir_drift = random.uniform(1.0, 5.0)
                 spd_drift = random.uniform(0.1, 1.0)
             else:
-                # Pancaroba: Arah angin berputar ekstrem (Chaos total)
-                dir_drift = random.uniform(-15.0, 15.0)
-                spd_drift = random.uniform(-2.0, 2.5)
+                dir_drift = random.uniform(-12.0, 12.0)
+                spd_drift = random.uniform(-1.5, 2.0)
 
-            # 3. Integrasi Nilai Baru Berdasarkan Data Lapisan Sebelumnya (Real Chaos Engine)
             sim_dir = (running_dir + dir_drift + turb_dir) % 360
             sim_speed_kt = max(1.5, running_speed + spd_drift + turb_spd)
             
-            # Kunci nilai ke memori berjalan untuk iterasi baris berikutnya
-            running_dir = sim_dir
-            running_speed = sim_speed_kt
+        # Simpan tren angin berjalan untuk dasar perhitungan baris selanjutnya
+        running_dir = sim_dir
+        running_speed = sim_speed_kt
 
-            target_level = math.ceil((idx - 1) / 2) * 1000
-            level_target_str = f"Level {target_level} ft"
+        target_level = math.ceil(idx / 2) * 1000
+        level_target_str = f"Level {target_level} ft"
 
         # Vektor Hodograph
         rad_dir = math.radians(sim_dir)
@@ -130,7 +123,7 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         v_comp = -sim_speed_kt * math.cos(rad_dir)
         st.session_state.hodo_points.append((u_comp, v_comp, idx))
 
-        # Perpindahan Geometris Posisi Balon
+        # Perpindahan Posisi Balon
         speed_ft_sec = sim_speed_kt * 1.68781
         balloon_move_dir = (sim_dir + 180) % 360
         move_rad = math.radians(balloon_move_dir)
@@ -140,7 +133,7 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         
         horizontal_dist = math.hypot(current_x, current_y)
         
-        # Sudut Geometri Murni
+        # Hitung Sudut Pandang Geometris Teodolit
         if horizontal_dist == 0:
             azimuth_deg = 0.0
             elevation_deg = 90.0
@@ -148,13 +141,12 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
             azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
             elevation_deg = math.degrees(math.atan2(height_above_stn, horizontal_dist))
 
-        # OPTIMASI DESIMAL: Jitter Alami Akibat Jarak Pandang & Getaran Lensa Teodolit
-        if idx > 1:
-            dist_factor = min(2.5, horizontal_dist / 8000.0)
-            azimuth_deg = (azimuth_deg + random.uniform(-0.6, 0.6) * (1.0 + dist_factor)) % 360
-            elevation_deg = max(0.2, min(89.8, elevation_deg + random.uniform(-0.3, 0.3) * (1.0 + dist_factor)))
+        # Jitter Desimal Akibat Jarak Pandang Lensa Teodolit
+        dist_factor = min(2.5, horizontal_dist / 7000.0)
+        azimuth_deg = (azimuth_deg + random.uniform(-0.5, 0.5) * (1.0 + dist_factor)) % 360
+        elevation_deg = max(0.2, min(89.8, elevation_deg + random.uniform(-0.3, 0.3) * (1.0 + dist_factor)))
 
-        height_display = "Awal" if idx == 1 else f"{int(height_above_stn)} ft"
+        height_display = f"{int(height_above_stn)} ft"
         azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
         elevation_str = f"{elevation_deg:.1f}".replace('.', ',')
 
@@ -256,17 +248,19 @@ with col_right:
     st.caption(status_deteksi)
     st.markdown("---")
     
-    # --- PANEL NAVIGASI MANUAL HP-FRIENDLY OLEH USER ---
+    # --- PANEL NAVIGASI MANUAL DENGAN TOMBOL PANAH HP-FRIENDLY ---
     st.subheader("🔍 Panel Bantuan Ketik Manual")
     
     if st.session_state.generated_records:
         readings_list = [r["Pembacaan Ke-"] for r in st.session_state.generated_records]
         
-        # Penjagaan Index State agar tidak Out-of-Bounds
+        # Validasi batas index state data
         if st.session_state.selected_row_idx > len(readings_list):
             st.session_state.selected_row_idx = len(readings_list)
+        if st.session_state.selected_row_idx < 1:
+            st.session_state.selected_row_idx = 1
             
-        # GRID LAYOUT TOMBOL PANAH UNTUK LAYAR HP
+        # LAYOUT GRID NAVIGASI TOMBOL PANAH JUMBO
         nv1, nv2, nv3 = st.columns([4, 4, 4])
         with nv1:
             if st.button("◀️ PREV", use_container_width=True):
@@ -275,8 +269,8 @@ with col_right:
                     st.rerun()
         with nv2:
             st.markdown(
-                f"<div style='text-align:center; font-size:18px; font-weight:bold; color:#0d3b66; "
-                f"background:#e9ecef; border-radius:6px; padding:6px; border: 1px solid #ccc;'>"
+                f"<div style='text-align:center; font-size:16px; font-weight:bold; color:#0d3b66; "
+                f"background:#e9ecef; border-radius:6px; padding:7px; border: 1px solid #ccc;'>"
                 f"Data Ke-{st.session_state.selected_row_idx}</div>", 
                 unsafe_allow_html=True
             )
@@ -286,24 +280,24 @@ with col_right:
                     st.session_state.selected_row_idx += 1
                     st.rerun()
                     
-        # Slider diletakkan di bawah sebagai alternatif opsional lompatan jauh
+        # Slider diletakkan di bawah untuk lompatan cepat data banyak
         st.session_state.selected_row_idx = st.slider(
-            "Atau geser cepat:", 
+            "Atau geser cepat indeks:", 
             min_value=1, 
             max_value=len(readings_list), 
             value=st.session_state.selected_row_idx
         )
         
-        # Ambil data aktif berdasarkan state indeks saat ini
+        # Penarikan record aktif sesuai state indeks saat ini
         active_rec = next(item for item in st.session_state.generated_records if item["Pembacaan Ke-"] == st.session_state.selected_row_idx)
         
-        # Display Kotak Display Angka Besar
+        # Tampilan Box Angka Besar Ketik Ulang Form
         st.markdown(
             f"""
             <div style="background-color: #fffdf0; padding: 20px; border-radius: 8px; border: 2px solid #d62828; text-align: center; margin-top: 10px;">
                 <div style="text-align: left; margin-bottom: 10px;">
-                    <span style="font-size: 16px; font-weight: bold; color: #333;">Pembacaan Ke: {active_rec['Pembacaan Ke-']}</span><br>
-                    <span style="font-size: 14px; font-style: italic; color: #e67e22; font-weight: bold;">Target Form: {active_rec['Level Target (BMKG)']}</span>
+                    <span style="font-size: 15px; font-weight: bold; color: #333;">Tinggi Target: {active_rec['Tinggi Balon (ft)']}</span><br>
+                    <span style="font-size: 14px; font-style: italic; color: #e67e22; font-weight: bold;">Posisi Form: {active_rec['Level Target (BMKG)']}</span>
                 </div>
                 <div style="display: flex; justify-content: space-around; margin-top: 15px;">
                     <div>
