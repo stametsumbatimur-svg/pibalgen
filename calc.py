@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(
-    page_title="Pibal Generator Stamet Waingapu",
+    page_title="Pibal Code Generator Stamet Waingapu",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -17,10 +17,6 @@ if 'generated_records' not in st.session_state:
     st.session_state.generated_records = []
 if 'hodo_points' not in st.session_state:
     st.session_state.hodo_points = []
-if 'current_x' not in st.session_state:
-    st.session_state.current_x = 0.0
-if 'current_y' not in st.session_state:
-    st.session_state.current_y = 0.0
 if 'last_idx' not in st.session_state:
     st.session_state.last_idx = 0
 if 'base_dir' not in st.session_state:
@@ -36,8 +32,8 @@ elevation_waingapu = 32.8
 st.markdown(
     """
     <div style='background-color:#0d3b66; padding:15px; border-radius:8px; text-align:center; color:white; margin-bottom:20px;'>
-        <h2 style='margin:0; color:white;'>APLIKASI SIMULATOR PIBAL</h2>
-        <p style='margin:5px 0 0 0; font-style:italic; font-size:14px;'>Stasiun Meteorologi Waingapu (97340) | Elevasi: 32.8 ft</p>
+        <h2 style='margin:0; color:white;'>APLIKASI GENERATOR SANDI PIBAL (PILOT)</h2>
+        <p style='margin:5px 0 0 0; font-style:italic; font-size:14px;'>Stasiun Meteorologi Waingapu (97340) | Format Kode Resmi WMO FM-32 (PPBB)</p>
     </div>
     """, 
     unsafe_allow_html=True
@@ -55,13 +51,11 @@ else:
     default_season_idx = 2
     status_deteksi = f"*Deteksi Otomatis: Pancaroba (Bulan {current_month})"
 
-# --- FUNGSI CORE ENGINE KALIBRASI REAL DATA ---
+# --- FUNGSI CORE ENGINE ENCODER SANDI PIBAL ---
 def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season, atmos_mode, fresh=False):
     if fresh:
         st.session_state.generated_records = []
         st.session_state.hodo_points = []
-        st.session_state.current_x = 0.0
-        st.session_state.current_y = 0.0
         st.session_state.last_idx = 0
         st.session_state.base_dir = surf_ddd
         st.session_state.base_speed_kt = surf_ff
@@ -72,86 +66,74 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         return
 
     start_loop = st.session_state.last_idx + 1
-    current_x = st.session_state.current_x
-    current_y = st.session_state.current_y
+    
+    # Ambil kondisi running last session jika ada lanjutan kontinu
+    if not fresh and st.session_state.generated_records:
+        running_dir = float(st.session_state.generated_records[-1]["ARAH (°)"])
+        running_speed = float(st.session_state.generated_records[-1]["KECEPATAN (kt)"])
+    else:
+        running_dir = st.session_state.base_dir
+        running_speed = st.session_state.base_speed_kt
 
     for idx in range(start_loop, target_readings + 1):
         height_above_stn = idx * 500.0
-        dt = (500.0 / rate_ft_min) * 60.0
 
-        # PEMODELAN MATEMATIS MENGACU PADA FOTO LOG SAMPEL NYATA
+        # Model Simulasi Berbasis Karakteristik Asli Atmosfer Waingapu
         if atmos_mode == "Tipe A (Meliuk Balik / Sampel 1)":
-            # Arah berputar tajam membentuk kurva meliuk (U-Turn Jet)
             sim_dir = (surf_ddd - (idx * 4.5) + 40 * math.sin(idx * 0.25) + random.uniform(-3, 3)) % 360
-            # Kecepatan melambat drastis di pertengahan membuat elevasi melonjak naik
             sim_speed_kt = max(1.5, surf_ff + 8.0 * math.cos(idx * 0.18) + random.uniform(-1.0, 1.0))
-            
         elif atmos_mode == "Tipe B (Lapisan Stabil / Sampel 2)":
-            # Arah konstan landai
             sim_dir = (surf_ddd - (idx * 0.8) + random.uniform(-1.5, 1.5)) % 360
-            # Kecepatan mengunci rasio konstan setelah melewati boundary layer permukaan
             if idx < 5:
                 sim_speed_kt = max(2.0, surf_ff + (idx * 1.8) + random.uniform(-1, 1))
             else:
                 sim_speed_kt = max(2.0, 13.5 + random.uniform(-0.6, 0.6))
-                
         else: # Tipe C (Angin Tenang / Sampel 3)
-            # Arah acak berputar-putar (Variabel) karena kecepatan angin sangat lemah
             sim_dir = (surf_ddd + (idx * 2.0) + random.uniform(-6, 6)) % 360
-            # Kecepatan dikunci sangat rendah (< 3 knot) agar elevasi stabil di atas 60 derajat
             sim_speed_kt = max(0.6, 2.2 + random.uniform(-0.5, 0.5))
+
+        # Kunci nilai ke running tracker untuk kesinambungan baris berikutnya
+        running_dir = sim_dir
+        running_speed = sim_speed_kt
 
         target_level = math.ceil(idx / 2) * 1000
         level_target_str = f"Level {target_level} ft"
 
-        # Vektor Hodograph
+        # --- ENCODING PROSEDUR SANDI WMO (ddfff) ---
+        # 1. Arah dd (Puluhan derajat terdekat, e.g. 264 -> 26, 267 -> 27)
+        dd_val = int(round(sim_dir / 10.0))
+        if dd_val > 36: dd_val = 1
+        if dd_val == 0: dd_val = 36
+        
+        # 2. Kecepatan fff (3 Digit standar)
+        speed_round = int(round(sim_speed_kt))
+        
+        if speed_round == 0:
+            sandi_group = "00000"
+        else:
+            sandi_group = f"{dd_val:02d}{speed_round:03d}"
+
+        # Simpan titik koordinat polar untuk verifikasi Hodograph
         rad_dir = math.radians(sim_dir)
         u_comp = -sim_speed_kt * math.sin(rad_dir)
         v_comp = -sim_speed_kt * math.cos(rad_dir)
         st.session_state.hodo_points.append((u_comp, v_comp, idx))
 
-        # Posisi Balon
-        speed_ft_sec = sim_speed_kt * 1.68781
-        balloon_move_dir = (sim_dir + 180) % 360
-        move_rad = math.radians(balloon_move_dir)
-        
-        current_x += speed_ft_sec * math.sin(move_rad) * dt
-        current_y += speed_ft_sec * math.cos(move_rad) * dt
-        
-        horizontal_dist = math.hypot(current_x, current_y)
-        
-        if horizontal_dist == 0:
-            azimuth_deg = 0.0
-            elevation_deg = 90.0
-        else:
-            azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
-            elevation_deg = math.degrees(math.atan2(height_above_stn, horizontal_dist))
-
-        # Mikro Jitter pembacaan lensa teleskop
-        dist_factor = min(2.0, horizontal_dist / 8000.0)
-        azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4) * (1.0 + dist_factor)) % 360
-        elevation_deg = max(0.2, min(89.8, elevation_deg + random.uniform(-0.2, 0.2) * (1.0 + dist_factor)))
-
-        height_display = f"{int(height_above_stn)} ft"
-        azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
-        elevation_str = f"{elevation_deg:.1f}".replace('.', ',')
-
         st.session_state.generated_records.append({
             "Pembacaan Ke-": idx,
-            "Tinggi Balon (ft)": height_display,
-            "Level Target (BMKG)": level_target_str,
-            "AZIMUT": azimuth_str,
-            "ELEVASI": elevation_str
+            "Tinggi Ketinggian": f"{int(height_above_stn)} ft",
+            "Target Form": level_target_str,
+            "ARAH (°)": f"{sim_dir:.0f}",
+            "KECEPATAN (kt)": f"{sim_speed_kt:.0f}",
+            "KELOMPOK SANDI": sandi_group
         })
 
-    st.session_state.current_x = current_x
-    st.session_state.current_y = current_y
     st.session_state.last_idx = target_readings
 
-# --- LAYOUT DENGAN DUA KOLOM UTAMA ---
+# --- LAYOUT APLIKASI ---
 col_left, col_right = st.columns([7, 5], gap="large")
 
-# === KOLOM KIRI: INPUT & TABEL DATA ===
+# === KOLOM KIRI: PARAMETER & TABEL DATA ===
 with col_left:
     st.subheader("⚙️ Parameter Kontrol Pengamatan")
     
@@ -160,7 +142,7 @@ with col_left:
         target_readings = st.number_input("Target Jumlah Pembacaan:", min_value=1, value=31, step=1)
         surf_ddd = st.number_input("Angin Permukaan ddd (°):", min_value=0.0, max_value=360.0, value=315.0, step=5.0)
     with c2:
-        rate_ft_min = st.number_input("Laju Naik (ft/min):", min_value=1.0, value=600.0, step=10.0)
+        rate_ft_min = st.number_input("Laju Naik Balon (ft/min):", min_value=1.0, value=600.0, step=10.0)
         surf_ff = st.number_input("Kec Angin Perm ff (kt):", min_value=0.0, value=5.0, step=1.0)
         
     selected_mode = st.selectbox(
@@ -175,17 +157,17 @@ with col_left:
 
     b1, b2 = st.columns(2)
     with b1:
-        if st.button("⚡ Generate Baru", type="primary", use_container_width=True):
+        if st.button("⚡ Generate Sandi Baru", type="primary", use_container_width=True):
             run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season_key, selected_mode, fresh=True)
     with b2:
         if st.button("⏩ Lanjutkan ke Target", use_container_width=True):
             if st.session_state.last_idx == 0:
-                st.error("Belum ada data awal. Silakan klik 'Generate Baru' terlebih dahulu.")
+                st.error("Belum ada data awal. Silakan klik 'Generate Sandi Baru' terlebih dahulu.")
             else:
                 run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season_key, selected_mode, fresh=False)
 
     st.markdown("---")
-    st.subheader("📊 Tabel Hasil Pembacaan")
+    st.subheader("📊 Tabel Hasil Analisis Sandi PILOT")
     
     if st.session_state.generated_records:
         df = pd.DataFrame(st.session_state.generated_records)
@@ -193,16 +175,16 @@ with col_left:
         
         csv_buffer = df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="💾 Ekspor Backup CSV",
+            label="💾 Ekspor Dokumen CSV",
             data=csv_buffer,
-            file_name=f"pibal_waingapu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            file_name=f"pibal_sandi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
             use_container_width=True
         )
     else:
-        st.info("Belum ada data. Atur parameter lalu pilih 'Generate Baru'.")
+        st.info("Belum ada data sandi yang dibuat. Atur parameter lalu pilih 'Generate Sandi Baru'.")
 
-# === KOLOM KANAN: HODOGRAPH & ASISTEN FORM ===
+# === KOLOM KANAN: HODOGRAPH & TEXT BLOCK TELEGRAM ===
 with col_right:
     st.subheader("🎯 Verifikasi Kelurusan Angin (Hodograph)")
     
@@ -239,7 +221,7 @@ with col_right:
     st.caption(status_deteksi)
     st.markdown("---")
     
-    # --- PANEL NAVIGASI MANUAL HP-FRIENDLY (TOMBOL BESAR DAN RAPAT) ---
+    # --- PANEL NAVIGASI MANUAL HP-FRIENDLY & DISPLAY KODE BESAR ---
     st.subheader("🔍 Panel Bantuan Ketik Manual")
     
     if st.session_state.generated_records:
@@ -250,7 +232,6 @@ with col_right:
         if st.session_state.selected_row_idx < 1:
             st.session_state.selected_row_idx = 1
             
-        # GRID BUTTON TOMBOL PANAH JUMBO
         nv1, nv2, nv3 = st.columns([3, 6, 3])
         with nv1:
             if st.button("◀️ PREV", use_container_width=True, key="btn_prev_mobile"):
@@ -261,7 +242,7 @@ with col_right:
             st.markdown(
                 f"<div style='text-align:center; font-size:16px; font-weight:bold; color:#0d3b66; "
                 f"background:#e9ecef; border-radius:6px; padding:7px; border: 1px solid #ccc;'>"
-                f"Baris Ke-{st.session_state.selected_row_idx}</div>", 
+                f"Tinggi: {st.session_state.selected_row_idx * 500} ft</div>", 
                 unsafe_allow_html=True
             )
         with nv3:
@@ -270,35 +251,56 @@ with col_right:
                     st.session_state.selected_row_idx += 1
                     st.rerun()
                     
-        st.session_state.selected_row_idx = st.slider(
-            "Geser cepat indeks:", 
-            min_value=1, 
-            max_value=len(readings_list), 
-            value=st.session_state.selected_row_idx
-        )
-        
         active_rec = next(item for item in st.session_state.generated_records if item["Pembacaan Ke-"] == st.session_state.selected_row_idx)
         
         st.markdown(
             f"""
-            <div style="background-color: #fffdf0; padding: 20px; border-radius: 8px; border: 2px solid #d62828; text-align: center; margin-top: 10px;">
-                <div style="text-align: left; margin-bottom: 10px;">
-                    <span style="font-size: 15px; font-weight: bold; color: #333;">Tinggi Target: {active_rec['Tinggi Balon (ft)']}</span><br>
-                    <span style="font-size: 14px; font-style: italic; color: #e67e22; font-weight: bold;">Posisi Form: {active_rec['Level Target (BMKG)']}</span>
-                </div>
-                <div style="display: flex; justify-content: space-around; margin-top: 15px;">
+            <div style="background-color: #fffdf0; padding: 15px; border-radius: 8px; border: 2px solid #d62828; text-align: center; margin-top: 10px;">
+                <div style="display: flex; justify-content: space-around; align-items: center;">
                     <div>
-                        <div style="color: gray; font-size: 12px; font-weight: bold; letter-spacing: 1px;">AZIMUT</div>
-                        <div style="color: #005b96; font-size: 45px; font-weight: bold; line-height: 1;">{active_rec['AZIMUT']}</div>
+                        <div style="color: gray; font-size: 11px; font-weight: bold;">ARAH</div>
+                        <div style="color: #333; font-size: 28px; font-weight: bold;">{active_rec['ARAH (°)']}°</div>
                     </div>
                     <div>
-                        <div style="color: gray; font-size: 12px; font-weight: bold; letter-spacing: 1px;">ELEVASI</div>
-                        <div style="color: #d62828; font-size: 45px; font-weight: bold; line-height: 1;">{active_rec['ELEVASI']}</div>
+                        <div style="color: gray; font-size: 11px; font-weight: bold;">KECEPATAN</div>
+                        <div style="color: #333; font-size: 28px; font-weight: bold;">{active_rec['KECEPATAN (kt)']} kt</div>
+                    </div>
+                    <div style="background-color: #e1f5fe; padding: 5px 15px; border-radius: 6px; border: 1px dashed #0288d1;">
+                        <div style="color: #0288d1; font-size: 11px; font-weight: bold;">SANDI WMO</div>
+                        <div style="color: #0d47a1; font-size: 32px; font-weight: bold; line-height: 1.1;">{active_rec['KELOMPOK SANDI']}</div>
                     </div>
                 </div>
             </div>
             """, 
             unsafe_allow_html=True
         )
+        
+        # --- GENERATOR BLOK TEKS TELEGRAM ASLI (PPBB) ---
+        st.markdown("### 📝 Teks Telegram Sandi PILOT (PPBB)")
+        
+        now = datetime.now()
+        day_str = now.strftime("%d")
+        hour_str = now.strftime("%H")
+        
+        # Format Header PILOT: PPBB YYGG4 (4 berarti satuan Knot & tracking Optik)
+        telegram_lines = [f"PPBB {day_str}{hour_str}4", "97340"]
+        
+        # Satukan data sandi per kelompok kelompok baris telegram
+        sandi_list = [r["KELOMPOK SANDI"] for r in st.session_state.generated_records]
+        
+        # Gabungkan menjadi format baris telegram (max 3-4 kelompok per baris agar rapi)
+        chunk_size = 4
+        for i in range(0, len(sandi_list), chunk_size):
+            line_chunk = sandi_list[i:i+chunk_size]
+            telegram_lines.append(" ".join(line_chunk))
+            
+        full_telegram_text = "\n".join(telegram_lines)
+        
+        st.text_area(
+            label="Tinggal Blok & Copy untuk Pengiriman Meteorologi:",
+            value=full_telegram_text,
+            height=180,
+            key="txt_telegram_block"
+        )
     else:
-        st.info("Silakan generate data terlebih dahulu.")
+        st.info("Data teks telegram sandi akan otomatis muncul di sini setelah Anda melakukan generate.")
