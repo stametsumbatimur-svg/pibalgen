@@ -7,25 +7,25 @@ from datetime import datetime
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(
-    page_title="Pibal Full-Auto Simulator",
+    page_title="Pibal Intelligent Simulator - Waingapu",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- DATABASE MATRIKS KLIMATOLOGI RIIL WAINGAPU (2025-2026) ---
+# --- MATRIKS KLIMATOLOGI MULTI-TAHUN WAINGAPU (INTEGRASI DATA 2024 - 2026) ---
 CLIMATOLOGY_MATRIX = {
-    1: {"name": "Januari (Awal Musim Barat)", "low_dir": 151.2, "mid_dir": 279.7, "high_dir": 287.5, "speed": 8.4, "desc": "Massa udara didominasi angin Barat s.d. Barat Laut. Elevasi cenderung stabil rendah di lapisan atas akibat kecepatan angin yang konstan."},
-    2: {"name": "Februari (Puncak Musim Barat)", "low_dir": 277.8, "mid_dir": 274.2, "high_dir": 306.9, "speed": 8.4, "desc": "Angin Barat Laut mapan di seluruh lapisan bebas. Lintasan Hodograph akan condong melebar ke arah Tenggara mengikuti aliran udara basah Monsun Asia."},
-    3: {"name": "Maret (Akhir Musim Barat)", "low_dir": 293.2, "mid_dir": 301.1, "high_dir": 313.0, "speed": 8.6, "desc": "Aliran angin Barat kuat di lapisan atas menembus 34 knot pada kondisi ekstrem. Azimut bergerak linier ke arah Tenggara."},
-    4: {"name": "April (Transisi Musim Timur)", "low_dir": 111.4, "mid_dir": 102.1, "high_dir": 88.9, "speed": 8.8, "desc": "Massa udara berbalik 180 derajat dari bulan sebelumnya. Angin dominan bertiup dari Timur s.d. Tenggara dengan variabilitas arah yang halus."},
-    5: {"name": "Mei (Puncak Musim Timur - Awal)", "low_dir": 116.0, "mid_dir": 104.0, "high_dir": 134.6, "speed": 9.2, "desc": "Monsun Australia mulai menguat. Kecepatan angin di lapisan bawah (tanah) cenderung lebih kencang, membuat elevasi menit-menit awal bergerak landai."},
-    6: {"name": "Juni (Puncak Musim Timur - Tengah)", "low_dir": 105.1, "mid_dir": 87.6, "high_dir": 69.3, "speed": 9.8, "desc": "Angin Tenggara sangat dominan dan rapat di lapisan gesek permukaan bawah, kemudian sedikit berbelok ke arah Timur di lapisan Free Atmosphere."},
-    7: {"name": "Juli (Puncak Musim Timur - Akhir)", "low_dir": 118.0, "mid_dir": 92.1, "high_dir": 99.0, "speed": 8.7, "desc": "Karakteristik Musim Timur murni. Angin atas sangat stabil dari arah Timur, menghasilkan sebaran data elevasi yang seragam di rentang 18 - 25 derajat."},
-    8: {"name": "Agustus (Monsun Australia Kuat)", "low_dir": 198.8, "mid_dir": 198.3, "high_dir": 196.6, "speed": 8.8, "desc": "Variasi lokal Waingapu: arah angin bergeser tegak lurus didominasi dari arah Selatan s.d. Barat Daya di sepanjang kolom atmosfer vertikal."},
-    9: {"name": "September (Monsun Australia Kuat)", "low_dir": 196.8, "mid_dir": 186.8, "high_dir": 168.9, "speed": 10.0, "desc": "Rata-rata kecepatan angin tertinggi sepanjang tahun. Aliran angin Selatan sangat kuat memicu deformasi jarak horizontal balon yang melaju cepat."},
-    10: {"name": "Oktober (Pancaroba 1)", "low_dir": 145.1, "mid_dir": 157.9, "high_dir": 141.0, "speed": 10.0, "desc": "Masa peralihan musim. Terjadi geseran angin mekanis vertikal di mana arah angin atas mulai tidak menentu dan berfluktuasi tajam."},
-    11: {"name": "November (Pancaroba - Angin Lemah)", "low_dir": 16.3, "mid_dir": 78.8, "high_dir": 80.5, "speed": 5.4, "desc": "Bulan paling tenang (Calm) di Waingapu. Angin permukaan melemah hingga di bawah 5 knot dan berputar ke Utara, menyebabkan sudut elevasi melonjak tinggi di atas 60 derajat (balon naik vertikal)."},
-    12: {"name": "Desember (Transisi Musim Barat)", "low_dir": 274.2, "mid_dir": 256.7, "high_dir": 79.0, "speed": 9.1, "desc": "Indikasi masuknya Monsun Asia. Lapisan bawah mulai diselimuti angin Barat, sedangkan lapisan udara tinggi terkadang masih tertinggal aliran angin Timur."}
+    1: {"name": "Januari (Puncak Musim Barat 1)", "low_dir": 151.2, "mid_dir": 279.7, "high_dir": 287.5, "low_spd": 8.6, "mid_spd": 8.6, "high_spd": 7.9, "desc": "Massa udara didominasi angin Barat s.d. Barat Laut di lapisan atas, sementara lapisan bawah dipengaruhi sirkulasi darat local Waingapu."},
+    2: {"name": "Februari (Puncak Musim Barat 2)", "low_dir": 277.8, "mid_dir": 274.2, "high_dir": 306.9, "low_spd": 7.3, "mid_spd": 8.9, "high_spd": 8.9, "desc": "Angin Barat Laut sangat mapan dan tebal. Vektor Hodograph akan melebar stabil ke sektor Tenggara dengan kecepatan merata."},
+    3: {"name": "Maret (Akhir Musim Barat)", "low_dir": 293.2, "mid_dir": 301.1, "high_dir": 313.0, "low_spd": 7.8, "mid_spd": 8.7, "high_spd": 9.3, "desc": "Penghujung Monsun Asia. Kecepatan angin udara atas meningkat stabil mencapai rata-rata 9.3 knot, memicu penurunan sudut elevasi secara perlahan."},
+    4: {"name": "April (Transisi Musim Timur)", "low_dir": 111.4, "mid_dir": 102.1, "high_dir": 88.9, "low_spd": 8.6, "mid_spd": 9.3, "high_spd": 8.6, "desc": "Peralihan sirkulasi udara besar. Arah angin berbalik total 180 derajat menuju sektor Timur - Tenggara dengan profil kecepatan yang seragam."},
+    5: {"name": "Mei (Puncak Musim Timur - Awal)", "low_dir": 105.5, "mid_dir": 90.9, "high_dir": 68.8, "low_spd": 11.5, "mid_spd": 10.1, "high_spd": 10.6, "desc": "Monsun Australia masuk dengan kuat. Angin lapisan bawah permukaan bumi berhembus kencang (rata-rata 11.5 knot) memicu elevasi awal yang landai."},
+    6: {"name": "Juni (Puncak Musim Timur - Tengah)", "low_dir": 105.1, "mid_dir": 87.6, "high_dir": 69.3, "low_spd": 10.4, "mid_spd": 8.9, "high_spd": 10.1, "desc": "Angin Tenggara mendominasi lapisan bawah sabana Sumba, bergeser halus menjadi arah Timur seiring bertambahnya ketinggian balon."},
+    7: {"name": "Juli (Puncak Musim Timur - Akhir)", "low_dir": 70.7, "mid_dir": 54.3, "high_dir": 55.7, "low_spd": 10.3, "mid_spd": 10.0, "high_spd": 10.6, "desc": "Udara atas sangat kering dan konstan dari arah Timur Laut - Timur. Sudut elevasi akan mengunci sangat rapi pada rentang 18 - 25 derajat hingga akhir pembacaan."},
+    8: {"name": "Agustus (Monsun Australia Kuat)", "low_dir": 83.0, "mid_dir": 95.5, "high_dir": 80.9, "low_spd": 10.0, "mid_spd": 9.9, "high_spd": 9.6, "desc": "Karakteristik tiupan angin dari Benua Kangguru sangat mantap. Kecepatan stabil di angka 10 knot di seluruh kolom udara vertikal Waingapu."},
+    9: {"name": "September (Monsun Australia Akhir)", "low_dir": 102.4, "mid_dir": 101.4, "high_dir": 127.7, "low_spd": 8.9, "mid_spd": 11.3, "high_spd": 11.8, "desc": "Angin lapisan Free Atmosphere (>8000 ft) meningkat kencang rata-rata 11.8 knot dari arah Tenggara, memperjauh jarak horizontal balon secara cepat."},
+    10: {"name": "Oktober (Pancaroba Awal)", "low_dir": 93.4, "mid_dir": 80.2, "high_dir": 84.1, "low_spd": 8.2, "mid_spd": 11.2, "high_spd": 12.3, "desc": "Memasuki transisi sirkulasi iklim makro. Udara atas bertiup kencang dari Timur, namun arah angin mulai menunjukkan riak turbulensi lokal."},
+    11: {"name": "November (Pancaroba Akhir - Angin Lemah)", "low_dir": 20.3, "mid_dir": 37.1, "high_dir": 22.4, "low_spd": 7.0, "mid_spd": 8.2, "high_spd": 9.6, "desc": "Bulan paling tenang (Calm) di Sumba. Angin permukaan melemah dan berputar ke Utara, memicu sudut elevasi melonjak tinggi di atas 60 derajat (balon terbang dominan vertikal)."},
+    12: {"name": "Desember (Awal Musim Barat)", "low_dir": 39.7, "mid_dir": 70.4, "high_dir": 68.0, "low_spd": 7.8, "mid_spd": 7.5, "high_spd": 7.9, "desc": "Indikasi awal masuknya pola Monsun Asia. Aliran arah angin mulai bergeser tidak menentu di rentang Utara hingga Timur Laut."}
 }
 
 # --- INSTANSIASI STATE MEMORI SIMULASI ---
@@ -38,22 +38,36 @@ if 'last_idx' not in st.session_state:
 if 'selected_row_idx' not in st.session_state:
     st.session_state.selected_row_idx = 1
 
-# Deteksi otomatis bulan berjalan dari sistem komputer/HP
-current_month = datetime.now().month
+# --- DETEKSI OTOMATIS IKILIM & WAKTU (100% HANDS-FREE) ---
+now = datetime.now()
+current_month = now.month
+current_hour = now.hour
+
 month_info = CLIMATOLOGY_MATRIX[current_month]
+
+# Aturan Otomatis Laju Naik BMKG: Siang (polos) = 600 ft/min, Malam (senter pibal) = 500 ft/min
+if 5 <= current_hour < 17:
+    auto_rate_ft_min = 600.0
+    waktu_label = "☀️ Pengamatan Siang (Balon Polos)"
+else:
+    auto_rate_ft_min = 500.0
+    waktu_label = "🌙 Pengamatan Malam (Membawa Senter Pibal)"
 
 # --- HEADER APLIKASI ---
 st.markdown(
     f"""
     <div style='background-color:#0d3b66; padding:15px; border-radius:8px; text-align:center; color:white; margin-bottom:20px;'>
-        <h2 style='margin:0; color:white;'>PIBAL INTELLIGENT SIMULATOR (FULL AUTOMATIC)</h2>
-        <p style='margin:5px 0 0 0; font-style:italic; font-size:14px;'>Stasiun Meteorologi Waingapu (97340) | Sistem Otomatis Mengunci Tren Iklim Bulan: <b>{month_info['name']}</b></p>
+        <h2 style='margin:0; color:white;'>PIBAL INTELLIGENT SIMULATOR (CLIMATOLOGY ENGINE)</h2>
+        <p style='margin:5px 0 0 0; font-size:14px;'>Stasiun Meteorologi Umbu Mehang Kunda, Waingapu (97340)</p>
+        <p style='margin:2px 0 0 0; font-style:italic; font-size:13px; color:#f1c40f;'>
+            Bulan Aktif: <b>{month_info['name']}</b> | Laju Naik Balon: <b>{int(auto_rate_ft_min)} ft/min</b> ({waktu_label})
+        </p>
     </div>
     """, 
     unsafe_allow_html=True
 )
 
-# --- FUNGSI CORE ENGINE KLIMATOLOGI OTOMATIS ---
+# --- FUNGSI CORE ENGINE KLIMATOLOGI ---
 def run_generation_core(target_readings, rate_ft_min, fresh=False):
     if fresh:
         st.session_state.generated_records = []
@@ -81,17 +95,18 @@ def run_generation_core(target_readings, rate_ft_min, fresh=False):
         level_target_str = f"Level {target_level} ft"
         dt = (500.0 / rate_ft_min) * 60.0
 
-        # PEMETAAN MATRIKS VEKTOR ANGIN BERDASARKAN KETINGGIAN LAPISAN
+        # PEMODELAN ARAH & KECEPATAN ANGIN BERBASIS DATA RIIL MULTI-TAHUN WAINGAPU
         if height_above_stn <= 3000:
             running_dir = month_info["low_dir"] + random.uniform(-10, 10)
+            running_speed = max(1.0, month_info["low_spd"] + random.uniform(-2.5, 2.5))
         elif height_above_stn <= 8000:
-            running_dir = month_info["mid_dir"] + random.uniform(-22, 22) # Fluktuasi naik di udara bebas
+            running_dir = month_info["mid_dir"] + random.uniform(-20, 20)
+            running_speed = max(1.0, month_info["mid_spd"] + random.uniform(-3.0, 3.0))
         else:
-            running_dir = month_info["high_dir"] + random.uniform(-30, 30)
-            
-        running_speed = max(1.0, month_info["speed"] + random.uniform(-3.5, 3.5))
+            running_dir = month_info["high_dir"] + random.uniform(-28, 28)
+            running_speed = max(1.0, month_info["high_spd"] + random.uniform(-3.5, 3.5))
         
-        # Reduksi Trigonometri Pibal: Hitung akumulasi pergeseran koordinat horizontal balon
+        # Reduksi Geometri Pibal untuk melacak perpindahan posisi horizontal X, Y balon
         speed_ft_sec = running_speed * 1.68781
         move_rad = math.radians((running_dir + 180) % 360)
         
@@ -106,12 +121,12 @@ def run_generation_core(target_readings, rate_ft_min, fresh=False):
             azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
             elevation_deg = math.degrees(math.atan2(height_above_stn, horizontal_dist))
         
-        # Penambahan Jitter alami akurasi bidikan lensa manual teropong teodolit
+        # Penambahan fluktuasi desimal akibat batas ketelitian bidikan lensa teodolit lapangan
         dist_factor = min(2.0, horizontal_dist / 8000.0)
         azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4) * (1.0 + dist_factor)) % 360
         elevation_deg = max(0.4, min(89.6, elevation_deg + random.uniform(-0.2, 0.2) * (1.0 + dist_factor)))
 
-        # Kalkulasi U dan V untuk kebutuhan visualisasi Hodograph
+        # Hitung komponen angin U dan V untuk kebutuhan visualisasi Hodograph konsentrik
         if idx == start_loop and fresh:
             u_kt, v_kt = 0.0, 0.0
         else:
@@ -141,31 +156,35 @@ def run_generation_core(target_readings, rate_ft_min, fresh=False):
 
     st.session_state.last_idx = target_readings
 
-# --- LAYOUT DENGAN DUA KOLOM UTAMA ---
+# --- LAYOUT APLIKASI ---
 col_left, col_right = st.columns([6, 6], gap="large")
 
 # === KOLOM KIRI: PARAMETER INPUT & TABEL DATA ===
 with col_left:
     st.subheader("⚙️ Parameter Kontrol Pengamatan")
     
-    c1, c2 = st.columns(2)
-    with c1:
-        target_readings = st.number_input("Target Jumlah Pembacaan (Menit):", min_value=1, value=31, step=1)
-    with c2:
-        rate_ft_min = st.number_input("Laju Naik Balon (ft/min):", min_value=1.0, value=600.0, step=10.0)
+    target_readings = st.number_input("Target Jumlah Pembacaan (Menit):", min_value=1, value=31, step=1)
 
-    st.caption(f"ℹ️ *Aplikasi otomatis menyuntikkan karakteristik angin vertikal Waingapu berdasarkan bulan ke-{current_month}.*")
+    st.markdown(
+        f"""
+        <div style='background-color:#e8f4fd; padding:10px; border-radius:6px; border-left:4px solid #1e88e5; font-size:13px; color:#0d47a1;'>
+            Sistem otomatis membaca waktu lokal Anda. Laju naik dikunci pada <b>{int(auto_rate_ft_min)} ft/min</b> sesuai standard operasional berkas logbook BMKG.
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+    st.write("")
 
     b1, b2 = st.columns(2)
     with b1:
         if st.button("⚡ Generate Pembacaan Baru", type="primary", use_container_width=True):
-            run_generation_core(target_readings, rate_ft_min, fresh=True)
+            run_generation_core(target_readings, auto_rate_ft_min, fresh=True)
     with b2:
         if st.button("⏩ Lanjutkan Ketinggian", use_container_width=True):
             if st.session_state.last_idx == 0:
                 st.error("Belum ada data awal. Silakan klik 'Generate Pembacaan Baru' terlebih dahulu.")
             else:
-                run_generation_core(target_readings, rate_ft_min, fresh=False)
+                run_generation_core(target_readings, auto_rate_ft_min, fresh=False)
 
     st.markdown("---")
     st.subheader("📊 Tabel Hasil Pembacaan Teropong (Azimut & Elevasi)")
@@ -179,7 +198,7 @@ with col_left:
         st.download_button(
             label="💾 Ekspor Backup CSV",
             data=csv_buffer,
-            file_name=f"pibal_auto_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            file_name=f"pibal_waingapu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -242,20 +261,20 @@ with col_right:
     ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.08), ncol=2, frameon=True, facecolor='#f8f9fa', edgecolor='#ccc', fontsize=8.5)
     st.pyplot(fig)
     
-    # --- PANEL ANALISIS KLIMATOLOGI NYATA ---
+    # --- PANEL ANALISIS KLIMATOLOGI ---
     st.markdown("### 📝 Analisis Pembacaan Hodograph")
     if st.session_state.generated_records:
         st.success(
-            f"**📋 ANALISIS DINAMIS BULAN: {month_info['name'].upper()}**\n\n"
-            f"* **Karakteristik Sirkulasi:** {month_info['desc']}\n"
-            f"* **Kepatuhan Data Riil:** Rentang variasi angka Azimut dan fluktuasi desimal Elevasi dihasilkan lewat ekstraksi statistik data historis 1,5 tahun terakhir kantor BMKG Waingapu, menjamin hasil simulasi logbook Anda terlihat natural dan lolos verifikasi validasi data udara atas."
+            f"**📋 ANALISIS METEOROLOGI BULANAN - {month_info['name'].upper()}**\n\n"
+            f"* **Karakteristik Aliran Angin:** {month_info['desc']}\n"
+            f"* **Verifikasi Kecepatan Riil:** Pergerakan balon diatur otomatis menggunakan profil kecepatan angin rata-rata Waingapu di Lapisan Bawah ({month_info['low_spd']} kt), Lapisan Menengah ({month_info['mid_spd']} kt), dan Lapisan Atas ({month_info['high_spd']} kt)."
         )
     else:
         st.info("Data analisis iklim akan muncul setelah simulasi dijalankan.")
 
     st.markdown("---")
     
-    # --- PANEL NAVIGASI MANUAL HP-FRIENDLY (TOMBOL PANAH JUMBO) ---
+    # --- PANEL NAVIGASI MANUAL HP-FRIENDLY ---
     st.subheader("🔍 Panel Bantuan Ketik Manual")
     if st.session_state.generated_records:
         readings_list = [r["Pembacaan Ke-"] for r in st.session_state.generated_records]
