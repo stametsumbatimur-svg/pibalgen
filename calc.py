@@ -186,7 +186,7 @@ with col_right:
     for knots in [10, 20, 30, 40]:
         circle = plt.Circle((0, 0), knots, color='#bdc3c7', fill=False, linestyle='--', linewidth=1.0)
         ax.add_patch(circle)
-        ax.text(0.5, knots + 0.5, f"{knots} kt", color='#7f8c8d', fontsize=8, weight='italic')
+        ax.text(0.5, knots + 0.5, f"{knots} kt", color='#7f8c8d', fontsize=8, style='italic')
         
     # Garis bantu sumbu salib tengah
     ax.axhline(0, color='#95a5a6', linestyle='-', linewidth=1.0)
