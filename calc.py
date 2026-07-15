@@ -102,11 +102,28 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
         dt = (500.0 / rate_ft_min) * 60.0
 
         if idx == 1:
-            # Manipulasi Visual Pembacaan 1 agar seragam & natural di web BMKG
-            azimuth_deg = (month_info["low_dir"] + random.uniform(-8, 8)) % 360
-            elevation_deg = random.uniform(87.1, 89.6) # Balon baru lepas, elevasi tinggi
+            # "Intip" perhitungan untuk Pembacaan Ke-2 agar angka Pembacaan Ke-1 bisa menyalin namun beda tipis
+            temp_dir = month_info["low_dir"]
+            temp_spd = month_info["low_spd"]
+            temp_speed_ft_sec = temp_spd * 1.68781
+            temp_move_rad = math.radians((temp_dir + 180) % 360)
             
-            # Titik asal (origin) di belakang layar tetap murni 0 agar Hodograph akurat
+            temp_x = temp_speed_ft_sec * math.sin(temp_move_rad) * dt
+            temp_y = temp_speed_ft_sec * math.cos(temp_move_rad) * dt
+            temp_h_dist = math.hypot(temp_x, temp_y)
+            
+            if temp_h_dist == 0:
+                base_az = 0.0
+                base_el = 90.0
+            else:
+                base_az = math.degrees(math.atan2(temp_x, temp_y)) % 360
+                base_el = math.degrees(math.atan2(500.0, temp_h_dist))
+            
+            # Aplikasikan manipulasi: Azimut beda tipis, Elevasi sedikit lebih tinggi (karena masih dekat di atas)
+            azimuth_deg = (base_az + random.uniform(-3.0, 3.0)) % 360
+            elevation_deg = min(89.5, base_el + random.uniform(1.5, 4.0))
+            
+            # Titik asal (origin) di belakang layar tetap murni 0 agar kalkulasi Hodograph akurat
             current_x, current_y = 0.0, 0.0
             horizontal_dist = 0.0
             u_kt, v_kt = 0.0, 0.0
@@ -183,7 +200,7 @@ with col_left:
     st.markdown(
         f"""
         <div style='background-color:#e8f4fd; padding:10px; border-radius:6px; border-left:4px solid #1e88e5; font-size:13px; color:#0d47a1;'>
-            Pembacaan Ke-1 (elevasi stasiun 32.8m) digenerate otomatis agar seragam. Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
+            Pembacaan Ke-1 (elevasi stasiun 32.8m) digenerate secara mulus mengikuti arah angin pembacaan selanjutnya. Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
         </div>
         """, 
         unsafe_allow_html=True
