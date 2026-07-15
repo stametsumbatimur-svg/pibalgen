@@ -88,6 +88,14 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
         current_x = last_rec["_real_x"]
         current_y = last_rec["_real_y"]
 
+    # LOGIKA CERDAS: Modifikasi Arah Angin Bawah Berdasarkan Efek Diurnal (Darat/Laut) Waingapu
+    if 5 <= current_hour <= 10:
+        base_low_dir = random.uniform(240.0, 290.0) # Pagi: Angin Darat
+    elif 11 <= current_hour <= 17:
+        base_low_dir = random.uniform(320.0, 360.0) # Siang: Angin Laut
+    else:
+        base_low_dir = month_info["low_dir"] # Malam: Kembali ke baseline monsun/klimatologi
+        
     for idx in range(start_loop, target_readings + 1):
         
         # LOGIKA BMKG: Pembacaan 1 diabaikan dari elevasi, 31 pembacaan = 15.000 ft
@@ -102,8 +110,8 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
         dt = (500.0 / rate_ft_min) * 60.0
 
         if idx == 1:
-            # "Intip" perhitungan untuk Pembacaan Ke-2 agar angka Pembacaan Ke-1 bisa menyalin namun beda tipis
-            temp_dir = month_info["low_dir"]
+            # "Intip" perhitungan untuk Pembacaan Ke-2 (menggunakan base_low_dir yang sudah ter-adjust jam)
+            temp_dir = base_low_dir
             temp_spd = month_info["low_spd"]
             temp_speed_ft_sec = temp_spd * 1.68781
             temp_move_rad = math.radians((temp_dir + 180) % 360)
@@ -119,7 +127,7 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
                 base_az = math.degrees(math.atan2(temp_x, temp_y)) % 360
                 base_el = math.degrees(math.atan2(500.0, temp_h_dist))
             
-            # Aplikasikan manipulasi: Azimut beda tipis, Elevasi sedikit lebih tinggi (karena masih dekat di atas)
+            # Aplikasikan manipulasi: Azimut beda tipis, Elevasi sedikit lebih tinggi
             azimuth_deg = (base_az + random.uniform(-3.0, 3.0)) % 360
             elevation_deg = min(89.5, base_el + random.uniform(1.5, 4.0))
             
@@ -130,7 +138,8 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
         else:
             # PEMODELAN ARAH & KECEPATAN ANGIN BERBASIS DATA RIIL
             if height_above_stn <= 3000:
-                running_dir = month_info["low_dir"] + random.uniform(-10, 10)
+                # Menggunakan arah angin Diurnal yang sudah disesuaikan dengan jam lokal
+                running_dir = base_low_dir + random.uniform(-10, 10)
                 running_speed = max(1.0, month_info["low_spd"] + random.uniform(-2.5, 2.5))
             elif height_above_stn <= 8000:
                 running_dir = month_info["mid_dir"] + random.uniform(-20, 20)
@@ -200,7 +209,7 @@ with col_left:
     st.markdown(
         f"""
         <div style='background-color:#e8f4fd; padding:10px; border-radius:6px; border-left:4px solid #1e88e5; font-size:13px; color:#0d47a1;'>
-            Pembacaan Ke-1 (elevasi stasiun 32.8m) digenerate secara mulus mengikuti arah angin pembacaan selanjutnya. Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
+            Pembacaan Ke-1 (elevasi stasiun 32.8m) digenerate secara mulus. <b>Sistem Sirkulasi Lokal Aktif:</b> Arah angin lapisan bawah akan menyesuaikan otomatis antara angin darat (pagi) dan angin laut (siang/sore). 
         </div>
         """, 
         unsafe_allow_html=True
@@ -300,8 +309,8 @@ with col_right:
     if st.session_state.generated_records:
         st.success(
             f"**📋 ANALISIS METEOROLOGI BULANAN - {month_info['name'].upper()}**\n\n"
-            f"* **Karakteristik Aliran Angin:** {month_info['desc']}\n"
-            f"* **Verifikasi Kecepatan Riil:** Pergerakan balon diatur otomatis menggunakan profil kecepatan angin rata-rata Waingapu di Lapisan Bawah ({month_info['low_spd']} kt), Lapisan Menengah ({month_info['mid_spd']} kt), dan Lapisan Atas ({month_info['high_spd']} kt)."
+            f"* **Karakteristik Aliran Monsun:** {month_info['desc']}\n"
+            f"* **Kondisi Udara Permukaan (Real-Time):** Simulator mendeteksi waktu lokal dan telah menyesuaikan arah angin di Lapisan Bawah (≤3.000 ft) untuk menyimulasikan turbulensi harian pesisir Waingapu."
         )
     else:
         st.info("Data analisis iklim akan muncul setelah simulasi dijalankan.")
