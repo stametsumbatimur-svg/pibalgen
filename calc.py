@@ -39,7 +39,7 @@ if 'last_idx' not in st.session_state:
 if 'selected_row_idx' not in st.session_state:
     st.session_state.selected_row_idx = 1
 
-# --- DETEKSI OTOMATIS IKILIM & WAKTU (FIX ZONA WAKTU WITA) ---
+# --- DETEKSI OTOMATIS IKILIM & WAKTU (ZONA WAKTU WITA) ---
 tz_wita = pytz.timezone('Asia/Makassar')
 now = datetime.now(tz_wita)
 current_month = now.month
@@ -60,7 +60,7 @@ st.markdown(
     f"""
     <div style='background-color:#0d3b66; padding:15px; border-radius:8px; text-align:center; color:white; margin-bottom:20px;'>
         <h2 style='margin:0; color:white;'>PIBAL INTELLIGENT SIMULATOR (CLIMATOLOGY ENGINE)</h2>
-        <p style='margin:5px 0 0 0; font-size:14px;'>Stasiun Meteorologi Umbu Mehang Kunda, Waingapu (97340)</p>
+        <p style='margin:5px 0 0 0; font-size:14px;'>Stasiun Meteorologi Umbu Mehang Kunda, Waingapu (97340) | Elevasi: 32.8 m</p>
         <p style='margin:2px 0 0 0; font-style:italic; font-size:13px; color:#f1c40f;'>
             Bulan Aktif: <b>{month_info['name']}</b> | Laju Naik Balon: <b>{int(auto_rate_ft_min)} ft/min</b> ({waktu_label})
         </p>
@@ -78,72 +78,87 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
         st.session_state.selected_row_idx = 1
         target_readings = target_amount
     else:
-        # Jika dilanjutkan, tambah dari indeks terakhir
         target_readings = st.session_state.last_idx + target_amount
 
     start_loop = st.session_state.last_idx + 1
     
     current_x, current_y = 0.0, 0.0
     if not fresh and st.session_state.generated_records:
-        # Menggunakan koordinat asli (tanpa noise) untuk perhitungan yang konsisten
         last_rec = st.session_state.generated_records[-1]
         current_x = last_rec["_real_x"]
         current_y = last_rec["_real_y"]
 
     for idx in range(start_loop, target_readings + 1):
-        height_above_stn = idx * 500.0
-        target_level = math.ceil(idx / 2) * 1000
-        level_target_str = f"Level {target_level} ft"
+        
+        # LOGIKA BMKG: Pembacaan 1 diabaikan, 31 pembacaan = 15.000 ft
+        height_above_stn = (idx - 1) * 500.0
+        
+        target_level = math.ceil((idx - 1) / 2) * 1000
+        if target_level == 0:
+            level_target_str = "Surface (Elevasi 32.8m)"
+        else:
+            level_target_str = f"Level {target_level} ft"
+
         dt = (500.0 / rate_ft_min) * 60.0
 
-        # PEMODELAN ARAH & KECEPATAN ANGIN BERBASIS DATA RIIL MULTI-TAHUN WAINGAPU
-        if height_above_stn <= 3000:
-            running_dir = month_info["low_dir"] + random.uniform(-10, 10)
-            running_speed = max(1.0, month_info["low_spd"] + random.uniform(-2.5, 2.5))
-        elif height_above_stn <= 8000:
-            running_dir = month_info["mid_dir"] + random.uniform(-20, 20)
-            running_speed = max(1.0, month_info["mid_spd"] + random.uniform(-3.0, 3.0))
-        else:
-            running_dir = month_info["high_dir"] + random.uniform(-28, 28)
-            running_speed = max(1.0, month_info["high_spd"] + random.uniform(-3.5, 3.5))
-        
-        # Reduksi Geometri Pibal untuk melacak perpindahan posisi horizontal X, Y balon
-        speed_ft_sec = running_speed * 1.68781
-        move_rad = math.radians((running_dir + 180) % 360)
-        
-        current_x += speed_ft_sec * math.sin(move_rad) * dt
-        current_y += speed_ft_sec * math.cos(move_rad) * dt
-        
-        horizontal_dist = math.hypot(current_x, current_y)
-        if horizontal_dist == 0:
-            azimuth_deg = 0.0
-            elevation_deg = 90.0
-        else:
-            azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
-            elevation_deg = math.degrees(math.atan2(height_above_stn, horizontal_dist))
-        
-        # Penambahan fluktuasi desimal akibat batas ketelitian bidikan lensa teodolit lapangan
-        dist_factor = min(2.0, horizontal_dist / 8000.0)
-        azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4) * (1.0 + dist_factor)) % 360
-        elevation_deg = max(0.4, min(89.6, elevation_deg + random.uniform(-0.2, 0.2) * (1.0 + dist_factor)))
-
-        # Hitung komponen angin U dan V untuk kebutuhan visualisasi Hodograph konsentrik (Fix First Point & Noise Bug)
         if idx == 1:
-            # Perhitungan komponen u dan v yang sebenarnya dari origin 0,0 ke posisi x,y pertama
-            u_kt = ((current_x - 0.0) / dt) / 1.68781
-            v_kt = ((current_y - 0.0) / dt) / 1.68781
+            # Pembacaan 1 (Surface) diabaikan dari perhitungan pergerakan angin
+            current_x, current_y = 0.0, 0.0
+            horizontal_dist = 0.0
+            azimuth_deg = 0.0
+            elevation_deg = 0.0
+            u_kt, v_kt = 0.0, 0.0
         else:
-            last_rec = st.session_state.generated_records[-1]
-            px = last_rec["_real_x"]
-            py = last_rec["_real_y"]
+            # PEMODELAN ARAH & KECEPATAN ANGIN BERBASIS DATA RIIL
+            if height_above_stn <= 3000:
+                running_dir = month_info["low_dir"] + random.uniform(-10, 10)
+                running_speed = max(1.0, month_info["low_spd"] + random.uniform(-2.5, 2.5))
+            elif height_above_stn <= 8000:
+                running_dir = month_info["mid_dir"] + random.uniform(-20, 20)
+                running_speed = max(1.0, month_info["mid_spd"] + random.uniform(-3.0, 3.0))
+            else:
+                running_dir = month_info["high_dir"] + random.uniform(-28, 28)
+                running_speed = max(1.0, month_info["high_spd"] + random.uniform(-3.5, 3.5))
             
-            u_kt = ((current_x - px) / dt) / 1.68781
-            v_kt = ((current_y - py) / dt) / 1.68781
+            speed_ft_sec = running_speed * 1.68781
+            move_rad = math.radians((running_dir + 180) % 360)
+            
+            current_x += speed_ft_sec * math.sin(move_rad) * dt
+            current_y += speed_ft_sec * math.cos(move_rad) * dt
+            
+            horizontal_dist = math.hypot(current_x, current_y)
+            if horizontal_dist == 0:
+                azimuth_deg = 0.0
+                elevation_deg = 90.0
+            else:
+                azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
+                elevation_deg = math.degrees(math.atan2(height_above_stn, horizontal_dist))
+            
+            # Fluktuasi ketelitian teodolit
+            dist_factor = min(2.0, horizontal_dist / 8000.0)
+            azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4) * (1.0 + dist_factor)) % 360
+            elevation_deg = max(0.4, min(89.6, elevation_deg + random.uniform(-0.2, 0.2) * (1.0 + dist_factor)))
+
+            # Hitung komponen Hodograph
+            if idx == 2 and fresh:
+                # Pergerakan murni pertama setelah lepas landas
+                u_kt = ((current_x - 0.0) / dt) / 1.68781
+                v_kt = ((current_y - 0.0) / dt) / 1.68781
+            else:
+                last_rec = st.session_state.generated_records[-1]
+                px = last_rec["_real_x"]
+                py = last_rec["_real_y"]
+                u_kt = ((current_x - px) / dt) / 1.68781
+                v_kt = ((current_y - py) / dt) / 1.68781
             
         st.session_state.hodo_points.append((u_kt, v_kt, height_above_stn))
 
-        azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
-        elevation_str = f"{elevation_deg:.1f}".replace('.', ',')
+        if idx == 1:
+            azimuth_str = "-"
+            elevation_str = "-"
+        else:
+            azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
+            elevation_str = f"{elevation_deg:.1f}".replace('.', ',')
 
         st.session_state.generated_records.append({
             "Pembacaan Ke-": idx,
@@ -169,7 +184,7 @@ with col_left:
     st.markdown(
         f"""
         <div style='background-color:#e8f4fd; padding:10px; border-radius:6px; border-left:4px solid #1e88e5; font-size:13px; color:#0d47a1;'>
-            Sistem otomatis membaca waktu lokal WITA Anda. Laju naik dikunci pada <b>{int(auto_rate_ft_min)} ft/min</b> sesuai standard operasional berkas logbook BMKG.
+            Sistem mengabaikan Pembacaan Ke-1 (elevasi stasiun 32.8m). Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
         </div>
         """, 
         unsafe_allow_html=True
@@ -236,7 +251,8 @@ with col_right:
         u_mid, v_mid = [], []
         u_high, v_high = [], []
         
-        for u, v, h in zip(u_pts, v_pts, heights):
+        for i, (u, v, h) in enumerate(zip(u_pts, v_pts, heights)):
+            if i == 0: continue # Skip plot untuk data pembacaan 1 (Surface diabaikan)
             if h <= 3000:
                 u_low.append(u); v_low.append(v)
             elif h <= 8000:
@@ -244,7 +260,8 @@ with col_right:
             else:
                 u_high.append(u); v_high.append(v)
         
-        ax.plot(u_pts, v_pts, color='#7f8c8d', linestyle='-', linewidth=1.5, alpha=0.7, zorder=1)
+        # Plot garis hodograph mengabaikan titik pertama
+        ax.plot(u_pts[1:], v_pts[1:], color='#7f8c8d', linestyle='-', linewidth=1.5, alpha=0.7, zorder=1)
         
         if u_low:
             ax.scatter(u_low, v_low, color='#2ecc71', edgecolor='white', s=50, label='Lapisan Batas Tanah (≤ 3.000 ft)', zorder=3)
@@ -253,7 +270,6 @@ with col_right:
         if u_high:
             ax.scatter(u_high, v_high, color='#e74c3c', edgecolor='white', s=50, label='Udara Bebas Atas (> 8.000 ft)', zorder=3)
             
-        # Optional: Plot origin (Stasiun pelepasan balon)
         ax.scatter(0, 0, color='#f1c40f', marker='*', s=150, edgecolor='black', label='Surface Station', zorder=4)
 
     ax.set_xlim(-max_hodo_range, max_hodo_range)
@@ -294,7 +310,7 @@ with col_right:
             st.markdown(
                 f"<div style='text-align:center; font-size:16px; font-weight:bold; color:#0d3b66; "
                 f"background:#e9ecef; border-radius:6px; padding:7px; border: 1px solid #ccc;'>"
-                f"Menit Ke- {st.session_state.selected_row_idx}</div>", 
+                f"Pembacaan Ke- {st.session_state.selected_row_idx}</div>", 
                 unsafe_allow_html=True
             )
         with nv3:
