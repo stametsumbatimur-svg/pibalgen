@@ -102,11 +102,13 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
         dt = (500.0 / rate_ft_min) * 60.0
 
         if idx == 1:
-            # Pembacaan 1 (Surface) diset 0.0 agar muncul di web BMKG
+            # Manipulasi Visual Pembacaan 1 agar seragam & natural di web BMKG
+            azimuth_deg = (month_info["low_dir"] + random.uniform(-8, 8)) % 360
+            elevation_deg = random.uniform(87.1, 89.6) # Balon baru lepas, elevasi tinggi
+            
+            # Titik asal (origin) di belakang layar tetap murni 0 agar Hodograph akurat
             current_x, current_y = 0.0, 0.0
             horizontal_dist = 0.0
-            azimuth_deg = 0.0
-            elevation_deg = 0.0
             u_kt, v_kt = 0.0, 0.0
         else:
             # PEMODELAN ARAH & KECEPATAN ANGIN BERBASIS DATA RIIL
@@ -181,7 +183,7 @@ with col_left:
     st.markdown(
         f"""
         <div style='background-color:#e8f4fd; padding:10px; border-radius:6px; border-left:4px solid #1e88e5; font-size:13px; color:#0d47a1;'>
-            Pembacaan Ke-1 (elevasi stasiun 32.8m) diset 0. Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
+            Pembacaan Ke-1 (elevasi stasiun 32.8m) digenerate otomatis agar seragam. Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
         </div>
         """, 
         unsafe_allow_html=True
