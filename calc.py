@@ -90,7 +90,7 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
 
     for idx in range(start_loop, target_readings + 1):
         
-        # LOGIKA BMKG: Pembacaan 1 diabaikan, 31 pembacaan = 15.000 ft
+        # LOGIKA BMKG: Pembacaan 1 diabaikan dari elevasi, 31 pembacaan = 15.000 ft
         height_above_stn = (idx - 1) * 500.0
         
         target_level = math.ceil((idx - 1) / 2) * 1000
@@ -102,7 +102,7 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
         dt = (500.0 / rate_ft_min) * 60.0
 
         if idx == 1:
-            # Pembacaan 1 (Surface) diabaikan dari perhitungan pergerakan angin
+            # Pembacaan 1 (Surface) diset 0.0 agar muncul di web BMKG
             current_x, current_y = 0.0, 0.0
             horizontal_dist = 0.0
             azimuth_deg = 0.0
@@ -153,12 +153,9 @@ def run_generation_core(target_amount, rate_ft_min, fresh=False):
             
         st.session_state.hodo_points.append((u_kt, v_kt, height_above_stn))
 
-        if idx == 1:
-            azimuth_str = "-"
-            elevation_str = "-"
-        else:
-            azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
-            elevation_str = f"{elevation_deg:.1f}".replace('.', ',')
+        # Format desimal agar koma ( , ) sesuai web BMKG
+        azimuth_str = f"{azimuth_deg:.1f}".replace('.', ',')
+        elevation_str = f"{elevation_deg:.1f}".replace('.', ',')
 
         st.session_state.generated_records.append({
             "Pembacaan Ke-": idx,
@@ -184,7 +181,7 @@ with col_left:
     st.markdown(
         f"""
         <div style='background-color:#e8f4fd; padding:10px; border-radius:6px; border-left:4px solid #1e88e5; font-size:13px; color:#0d47a1;'>
-            Sistem mengabaikan Pembacaan Ke-1 (elevasi stasiun 32.8m). Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
+            Pembacaan Ke-1 (elevasi stasiun 32.8m) diset 0. Untuk mencapai ketinggian <b>15.000 ft</b>, masukkan minimal <b>31</b> pembacaan.
         </div>
         """, 
         unsafe_allow_html=True
@@ -252,7 +249,7 @@ with col_right:
         u_high, v_high = [], []
         
         for i, (u, v, h) in enumerate(zip(u_pts, v_pts, heights)):
-            if i == 0: continue # Skip plot untuk data pembacaan 1 (Surface diabaikan)
+            if i == 0: continue # Skip plot untuk data pembacaan 1 (Surface)
             if h <= 3000:
                 u_low.append(u); v_low.append(v)
             elif h <= 8000:
