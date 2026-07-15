@@ -4,6 +4,7 @@ import random
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
+import pytz
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(
@@ -38,8 +39,9 @@ if 'last_idx' not in st.session_state:
 if 'selected_row_idx' not in st.session_state:
     st.session_state.selected_row_idx = 1
 
-# --- DETEKSI OTOMATIS IKILIM & WAKTU (100% HANDS-FREE) ---
-now = datetime.now()
+# --- DETEKSI OTOMATIS IKILIM & WAKTU (FIX ZONA WAKTU WITA) ---
+tz_wita = pytz.timezone('Asia/Makassar')
+now = datetime.now(tz_wita)
 current_month = now.month
 current_hour = now.hour
 
@@ -68,26 +70,25 @@ st.markdown(
 )
 
 # --- FUNGSI CORE ENGINE KLIMATOLOGI ---
-def run_generation_core(target_readings, rate_ft_min, fresh=False):
+def run_generation_core(target_amount, rate_ft_min, fresh=False):
     if fresh:
         st.session_state.generated_records = []
         st.session_state.hodo_points = []
         st.session_state.last_idx = 0
         st.session_state.selected_row_idx = 1
-
-    if target_readings <= st.session_state.last_idx:
-        st.warning(f"Data sudah ter-generate sebanyak {st.session_state.last_idx} baris.")
-        return
+        target_readings = target_amount
+    else:
+        # Jika dilanjutkan, tambah dari indeks terakhir
+        target_readings = st.session_state.last_idx + target_amount
 
     start_loop = st.session_state.last_idx + 1
     
     current_x, current_y = 0.0, 0.0
     if not fresh and st.session_state.generated_records:
+        # Menggunakan koordinat asli (tanpa noise) untuk perhitungan yang konsisten
         last_rec = st.session_state.generated_records[-1]
-        h_d = last_rec["_h_dist"]
-        az_rad = math.radians(last_rec["_az_deg"])
-        current_x = h_d * math.sin(az_rad)
-        current_y = h_d * math.cos(az_rad)
+        current_x = last_rec["_real_x"]
+        current_y = last_rec["_real_y"]
 
     for idx in range(start_loop, target_readings + 1):
         height_above_stn = idx * 500.0
@@ -126,15 +127,15 @@ def run_generation_core(target_readings, rate_ft_min, fresh=False):
         azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4) * (1.0 + dist_factor)) % 360
         elevation_deg = max(0.4, min(89.6, elevation_deg + random.uniform(-0.2, 0.2) * (1.0 + dist_factor)))
 
-        # Hitung komponen angin U dan V untuk kebutuhan visualisasi Hodograph konsentrik
-        if idx == start_loop and fresh:
-            u_kt, v_kt = 0.0, 0.0
+        # Hitung komponen angin U dan V untuk kebutuhan visualisasi Hodograph konsentrik (Fix First Point & Noise Bug)
+        if idx == 1:
+            # Perhitungan komponen u dan v yang sebenarnya dari origin 0,0 ke posisi x,y pertama
+            u_kt = ((current_x - 0.0) / dt) / 1.68781
+            v_kt = ((current_y - 0.0) / dt) / 1.68781
         else:
             last_rec = st.session_state.generated_records[-1]
-            h_d_prev = last_rec["_h_dist"]
-            az_rad_prev = math.radians(last_rec["_az_deg"])
-            px = h_d_prev * math.sin(az_rad_prev)
-            py = h_d_prev * math.cos(az_rad_prev)
+            px = last_rec["_real_x"]
+            py = last_rec["_real_y"]
             
             u_kt = ((current_x - px) / dt) / 1.68781
             v_kt = ((current_y - py) / dt) / 1.68781
@@ -150,8 +151,8 @@ def run_generation_core(target_readings, rate_ft_min, fresh=False):
             "Level Target (BMKG)": level_target_str,
             "AZIMUT": azimuth_str,
             "ELEVASI": elevation_str,
-            "_h_dist": horizontal_dist,
-            "_az_deg": azimuth_deg
+            "_real_x": current_x,
+            "_real_y": current_y
         })
 
     st.session_state.last_idx = target_readings
@@ -163,12 +164,12 @@ col_left, col_right = st.columns([6, 6], gap="large")
 with col_left:
     st.subheader("⚙️ Parameter Kontrol Pengamatan")
     
-    target_readings = st.number_input("Target Jumlah Pembacaan (Menit):", min_value=1, value=31, step=1)
+    target_readings = st.number_input("Input Durasi / Tambahan Menit:", min_value=1, value=31, step=1)
 
     st.markdown(
         f"""
         <div style='background-color:#e8f4fd; padding:10px; border-radius:6px; border-left:4px solid #1e88e5; font-size:13px; color:#0d47a1;'>
-            Sistem otomatis membaca waktu lokal Anda. Laju naik dikunci pada <b>{int(auto_rate_ft_min)} ft/min</b> sesuai standard operasional berkas logbook BMKG.
+            Sistem otomatis membaca waktu lokal WITA Anda. Laju naik dikunci pada <b>{int(auto_rate_ft_min)} ft/min</b> sesuai standard operasional berkas logbook BMKG.
         </div>
         """, 
         unsafe_allow_html=True
@@ -191,14 +192,14 @@ with col_left:
     
     if st.session_state.generated_records:
         df = pd.DataFrame(st.session_state.generated_records)
-        display_df = df.drop(columns=["_h_dist", "_az_deg"])
+        display_df = df.drop(columns=["_real_x", "_real_y"])
         st.dataframe(display_df, use_container_width=True, hide_index=True)
         
         csv_buffer = display_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="💾 Ekspor Backup CSV",
             data=csv_buffer,
-            file_name=f"pibal_waingapu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            file_name=f"pibal_waingapu_{datetime.now(tz_wita).strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -252,7 +253,8 @@ with col_right:
         if u_high:
             ax.scatter(u_high, v_high, color='#e74c3c', edgecolor='white', s=50, label='Udara Bebas Atas (> 8.000 ft)', zorder=3)
             
-        ax.scatter(u_pts[0], v_pts[0], color='#f1c40f', marker='*', s=150, edgecolor='black', label='Surface Release', zorder=4)
+        # Optional: Plot origin (Stasiun pelepasan balon)
+        ax.scatter(0, 0, color='#f1c40f', marker='*', s=150, edgecolor='black', label='Surface Station', zorder=4)
 
     ax.set_xlim(-max_hodo_range, max_hodo_range)
     ax.set_ylim(-max_hodo_range, max_hodo_range)
