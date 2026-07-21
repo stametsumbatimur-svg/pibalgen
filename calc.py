@@ -39,8 +39,7 @@ def load_historical_pibal():
         df['month'] = df['datetime'].dt.month
         return df
     except Exception as e:
-        # Fallback jika file belum berada di direktori yang sama
-        st.warning(f"File dataset historis ({filename}) tidak ditemukan. Aplikasi akan menggunakan fallback statistik. Detail: {e}")
+        st.warning(f"File dataset historis ({filename}) tidak ditemukan. Detail: {e}")
         return None
 
 df_historical = load_historical_pibal()
@@ -80,13 +79,10 @@ st.markdown(
 # --- DETEKSI OTOMATIS MUSIM ---
 current_month = datetime.now().month
 if current_month in [5, 6, 7, 8, 9]:
-    default_season_idx = 0
     status_deteksi = f"*Deteksi Otomatis: Musim Timur (Bulan {current_month})"
 elif current_month in [11, 12, 1, 2, 3]:
-    default_season_idx = 1
     status_deteksi = f"*Deteksi Otomatis: Musim Barat (Bulan {current_month})"
 else:
-    default_season_idx = 2
     status_deteksi = f"*Deteksi Otomatis: Pancaroba (Bulan {current_month})"
 
 # --- FUNGSI SEARCH MATCHING HISTORIS ---
@@ -225,7 +221,6 @@ def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=Fal
 # --- LAYOUT DENGAN DUA KOLOM UTAMA ---
 col_left, col_right = st.columns([7, 5], gap="large")
 
-# === KOLOM KIRI: INPUT & TABEL DATA ===
 # === KOLOM KIRI: INPUT & TABEL DATA ===
 with col_left:
     st.subheader("⚙️ Parameter Kontrol Pengamatan")
