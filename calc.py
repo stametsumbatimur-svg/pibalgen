@@ -97,25 +97,20 @@ def find_best_historical_match(input_ddd, input_ff, input_month, df):
     rad_in = math.radians(input_ddd)
     rad_hist = np.radians(obs_meta['wind_dir_surface'])
     
-    # Jarak sudut arah angin
     angle_diff = np.degrees(np.arccos(np.clip(
         np.cos(rad_in) * np.cos(rad_hist) + np.sin(rad_in) * np.sin(rad_hist), -1.0, 1.0
     )))
     
-    # Selisih kecepatan angin
     speed_diff = np.abs(obs_meta['wind_speed_surface'] - input_ff)
-    
-    # Selisih bulan/musim
     month_diff = np.minimum(np.abs(obs_meta['month'] - input_month), 12 - np.abs(obs_meta['month'] - input_month))
     
-    # Skor gabungan (semakin kecil semakin cocok)
     score = angle_diff + 4.0 * speed_diff + 2.0 * month_diff
     best_idx = score.idxmin()
     best_obs = obs_meta.loc[best_idx]
     
     return best_obs['data_timestamp'], best_obs['datetime'], best_obs['wind_dir_surface'], best_obs['wind_speed_surface']
 
-# --- FUNGSI CORE GENERATOR DATA ---
+# --- FUNGSI CORE GENERATOR DATA DENGAN SANITASI FISIKA AZIMUT/ELEVASI ---
 def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=False):
     if fresh or not st.session_state.generated_records:
         st.session_state.generated_records = []
@@ -127,7 +122,6 @@ def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=Fal
         st.warning(f"Data sudah ter-generate sebanyak {st.session_state.last_idx} baris. Naikkan target untuk melanjutkan.")
         return
 
-    # Cari matching data historis
     match_ts, match_dt, hist_ddd, hist_ff = None, None, surf_ddd, surf_ff
     hist_rows = []
     
@@ -146,8 +140,9 @@ def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=Fal
     start_loop = st.session_state.last_idx + 1
     hist_dict = {r['pembacaan']: r for r in hist_rows}
 
-    # Penyiapan kalkulasi titik Hodograph
     rate_ft_min = 600.0
+    max_allowed_speed_kt = 35.0  # Batas fisika kecepatan angin maksimum yang wajar
+    
     prev_x, prev_y = 0.0, 0.0
 
     for idx in range(1, target_readings + 1):
@@ -155,63 +150,83 @@ def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=Fal
         level_target_str = "Diabaikan (Rilis)" if idx == 1 else f"Level {target_level} ft"
         height_above_stn = 100.0 if idx == 1 else (idx - 1) * 500.0
         
-        # Ambil nilai Azimut & Elevasi dari historis jika tersedia
+        # Ambil nilai awal dari historis / ekstrapolasi
         if idx in hist_dict:
-            azimuth_deg = hist_dict[idx]['azimuth']
-            elevation_deg = hist_dict[idx]['elevasi']
+            raw_az = hist_dict[idx]['azimuth']
+            raw_el = hist_dict[idx]['elevasi']
         else:
-            # Ekstrapolasi jika pembacaan melebihi batas data historis yang tersedia
             if len(hist_rows) > 0:
                 last_r = hist_rows[-1]
                 delta_idx = idx - last_r['pembacaan']
-                azimuth_deg = (last_r['azimuth'] + delta_idx * random.uniform(-1.0, 1.0)) % 360
-                elevation_deg = max(1.0, last_r['elevasi'] - delta_idx * random.uniform(0.1, 0.4))
+                raw_az = (last_r['azimuth'] + delta_idx * random.uniform(-0.5, 0.5)) % 360
+                raw_el = max(1.5, last_r['elevasi'] - delta_idx * random.uniform(0.1, 0.3))
             else:
-                azimuth_deg = (surf_ddd + random.uniform(-10, 10)) % 360
-                elevation_deg = max(5.0, 45.0 - idx * 1.2)
+                raw_az = (surf_ddd + random.uniform(-5, 5)) % 360
+                raw_el = max(5.0, 45.0 - idx * 1.2)
 
+        # --- SANITASI FISIKA ATAS SUDAH AZIMUT & ELEVASI ---
+        if idx == 1:
+            dt = 10.0
+            clean_az = raw_az
+            clean_el = raw_el
+            x, y = 0.0, 0.0
+            u_comp = -surf_ff * math.sin(math.radians(surf_ddd))
+            v_comp = -surf_ff * math.cos(math.radians(surf_ddd))
+        else:
+            prev_h = 100.0 if idx == 2 else (idx - 2) * 500.0
+            dt = ((height_above_stn - prev_h) / rate_ft_min) * 60.0
+            
+            # Hitung jarak horizontal d dari elevasi raw
+            safe_el = max(0.5, min(89.0, raw_el))
+            d = height_above_stn / math.tan(math.radians(safe_el))
+            
+            x = d * math.sin(math.radians(raw_az))
+            y = d * math.cos(math.radians(raw_az))
+            
+            dx = x - prev_x
+            dy = y - prev_y
+            dist_ft = math.hypot(dx, dy)
+            speed_kt = (dist_ft / dt) / 1.68781
+            
+            # Jika terdeteksi anomali/lompatan ekstrem (speed > 35 kt), perbaiki Azimut & Elevasi
+            if speed_kt > max_allowed_speed_kt:
+                adj_dist_ft = max_allowed_speed_kt * 1.68781 * dt
+                move_dir = math.degrees(math.atan2(dx, dy)) % 360
+                
+                # Rekonstruksi x dan y yang wajar
+                x = prev_x + adj_dist_ft * math.sin(math.radians(move_dir))
+                y = prev_y + adj_dist_ft * math.cos(math.radians(move_dir))
+                
+                d = math.hypot(x, y)
+                if d > 0:
+                    clean_az = math.degrees(math.atan2(x, y)) % 360
+                    clean_el = math.degrees(math.atan2(height_above_stn, d))
+                else:
+                    clean_az, clean_el = raw_az, raw_el
+            else:
+                clean_az, clean_el = raw_az, raw_el
+
+            # Kalkulasi u, v Hodograph berdasarkan nilai yang sudah disanitasi
+            move_dir = math.degrees(math.atan2(x - prev_x, y - prev_y)) % 360
+            wind_dir = (move_dir + 180) % 360
+            calc_speed_kt = min(speed_kt, max_allowed_speed_kt)
+            
+            u_comp = -calc_speed_kt * math.sin(math.radians(wind_dir))
+            v_comp = -calc_speed_kt * math.cos(math.radians(wind_dir))
+
+        prev_x, prev_y = x, y
+
+        # Simpan nilai AZIMUT dan ELEVASI yang SUDAH BERSIH & AMAN
         if idx >= start_loop:
             height_display = "Awal" if idx == 1 else f"{int(height_above_stn)} ft"
             st.session_state.generated_records.append({
                 "Pembacaan Ke-": idx,
                 "Tinggi Balon (ft)": height_display,
                 "Level Target (BMKG)": level_target_str,
-                "AZIMUT": round(azimuth_deg, 1),
-                "ELEVASI": round(elevation_deg, 1)
+                "AZIMUT": round(clean_az, 1),
+                "ELEVASI": round(clean_el, 1)
             })
 
-        # --- REKONSTRUKSI TITIK HODOGRAPH ---
-        if idx == 1:
-            dt = 10.0
-            u_comp = -surf_ff * math.sin(math.radians(surf_ddd))
-            v_comp = -surf_ff * math.cos(math.radians(surf_ddd))
-            d = 0.0
-            x, y = 0.0, 0.0
-        else:
-            prev_h = 100.0 if idx == 2 else (idx - 2) * 500.0
-            dt = ((height_above_stn - prev_h) / rate_ft_min) * 60.0
-            
-            if elevation_deg <= 0 or elevation_deg >= 90:
-                d = 0.0
-            else:
-                d = height_above_stn / math.tan(math.radians(elevation_deg))
-                
-            x = d * math.sin(math.radians(azimuth_deg))
-            y = d * math.cos(math.radians(azimuth_deg))
-            
-            dx = x - prev_x
-            dy = y - prev_y
-            dist_ft = math.hypot(dx, dy)
-            speed_ft_sec = dist_ft / dt if dt > 0 else 0
-            speed_kt = speed_ft_sec / 1.68781
-            
-            move_dir = math.degrees(math.atan2(dx, dy)) % 360
-            wind_dir = (move_dir + 180) % 360
-            
-            u_comp = -speed_kt * math.sin(math.radians(wind_dir))
-            v_comp = -speed_kt * math.cos(math.radians(wind_dir))
-
-        prev_x, prev_y = x, y
         if idx >= start_loop or fresh:
             st.session_state.hodo_points.append((u_comp, v_comp, idx))
 
