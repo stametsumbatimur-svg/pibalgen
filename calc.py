@@ -226,6 +226,7 @@ def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=Fal
 col_left, col_right = st.columns([7, 5], gap="large")
 
 # === KOLOM KIRI: INPUT & TABEL DATA ===
+# === KOLOM KIRI: INPUT & TABEL DATA ===
 with col_left:
     st.subheader("⚙️ Parameter Kontrol Pengamatan")
     
@@ -237,10 +238,6 @@ with col_left:
         surf_ff = st.number_input("Kec Angin Perm ff (kt):", min_value=0.0, value=5.0, step=1.0)
         selected_month = st.selectbox("Bulan Pengamatan:", list(range(1, 13)), index=current_month-1, 
                                       format_func=lambda x: datetime(2024, x, 1).strftime('%B'))
-        
-    season_options = ["timur", "barat", "pancaroba"]
-    season_labels = ["Musim Timur", "Musim Barat", "Pancaroba"]
-    selected_season = st.radio("Pola Kebiasaan Musim:", season_labels, index=default_season_idx, horizontal=True)
 
     b1, b2 = st.columns(2)
     with b1:
