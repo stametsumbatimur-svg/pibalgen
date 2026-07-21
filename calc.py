@@ -19,7 +19,7 @@ elevation_waingapu = 32.8
 # --- LOAD DATASET HISTORIS UMBU MEHANG KUNDA ---
 @st.cache_data
 def load_historical_pibal():
-    filename = 'Raw Pibal 2024-01-01 to 2026-07-21_2.csv'
+    filename = 'Raw Pibal 2024-01-01 to 2026-07-21.csv'
     try:
         with open(filename, 'r') as f:
             first_line = f.readline()
