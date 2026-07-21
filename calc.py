@@ -3,6 +3,7 @@ import math
 import random
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from datetime import datetime
 
 # Konfigurasi Halaman Streamlit
@@ -27,8 +28,19 @@ if 'base_dir' not in st.session_state:
     st.session_state.base_dir = None
 if 'base_speed_kt' not in st.session_state:
     st.session_state.base_speed_kt = None
+if 'active_row' not in st.session_state:
+    st.session_state.active_row = 1
 
 elevation_waingapu = 32.8
+
+# --- FUNGSI CALLBACK NAVIGASI MOBILE ---
+def prev_row():
+    if st.session_state.active_row > 1:
+        st.session_state.active_row -= 1
+
+def next_row():
+    if st.session_state.active_row < len(st.session_state.generated_records):
+        st.session_state.active_row += 1
 
 # --- HEADER APLIKASI ---
 st.markdown(
@@ -44,13 +56,13 @@ st.markdown(
 # --- DETEKSI OTOMATIS MUSIM ---
 current_month = datetime.now().month
 if current_month in [5, 6, 7, 8, 9]:
-    default_season_idx = 0  # Musim Timur
+    default_season_idx = 0
     status_deteksi = f"*Deteksi Otomatis: Musim Timur (Bulan {current_month})"
 elif current_month in [11, 12, 1, 2, 3]:
-    default_season_idx = 1  # Musim Barat
+    default_season_idx = 1
     status_deteksi = f"*Deteksi Otomatis: Musim Barat (Bulan {current_month})"
 else:
-    default_season_idx = 2  # Pancaroba
+    default_season_idx = 2
     status_deteksi = f"*Deteksi Otomatis: Pancaroba (Bulan {current_month})"
 
 # --- FUNGSI CORE GENERATOR DATA ---
@@ -63,14 +75,13 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
         st.session_state.last_idx = 0
         st.session_state.base_dir = surf_ddd
         st.session_state.base_speed_kt = surf_ff
+        st.session_state.active_row = 1
 
     if target_readings <= st.session_state.last_idx:
         st.warning(f"Data sudah ter-generate sebanyak {st.session_state.last_idx} baris. Naikkan target untuk melanjutkan.")
         return
 
-    # Penjagaan dari pembagian dengan nol
     safe_rate = max(rate_ft_min, 1.0)
-
     start_loop = st.session_state.last_idx + 1
     current_x = st.session_state.current_x
     current_y = st.session_state.current_y
@@ -88,7 +99,6 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
             dt = ((height_above_stn - prev_height) / safe_rate) * 60.0
             layer_factor = height_above_stn / 1000.0
             
-            # Pemodelan Lapisan Udara Atas Dinamis (Inversion & Shear)
             if season == "timur":
                 if height_above_stn < 7000:
                     dir_shear = -(layer_factor * 4.0)
@@ -96,7 +106,6 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
                 else:
                     dir_shear = -(7.0 * 4.0) - ((layer_factor - 7.0) * 12.0)
                     speed_shear = (7.0 * 0.5) + ((layer_factor - 7.0) * 1.2)
-                
                 sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-6, 6)) % 360
                 sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + random.uniform(-1.5, 1.5))
                 
@@ -107,7 +116,6 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
                 else:
                     dir_shear = (8.0 * 3.0) + ((layer_factor - 8.0) * 9.0)
                     speed_shear = (8.0 * 0.4) + ((layer_factor - 8.0) * 1.0)
-                    
                 sim_dir = (st.session_state.base_dir + dir_shear + random.uniform(-6, 6)) % 360
                 sim_speed_kt = max(2.5, st.session_state.base_speed_kt + speed_shear + random.uniform(-1.5, 1.5))
             else:
@@ -117,13 +125,11 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
             target_level = math.ceil((idx - 1) / 2) * 1000
             level_target_str = f"Level {target_level} ft"
 
-        # Vektor Hodograph
         rad_dir = math.radians(sim_dir)
         u_comp = -sim_speed_kt * math.sin(rad_dir)
         v_comp = -sim_speed_kt * math.cos(rad_dir)
         st.session_state.hodo_points.append((u_comp, v_comp, idx))
 
-        # Perpindahan Balon
         speed_ft_sec = sim_speed_kt * 1.68781
         balloon_move_dir = (sim_dir + 180) % 360
         move_rad = math.radians(balloon_move_dir)
@@ -140,14 +146,12 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
             azimuth_deg = math.degrees(math.atan2(current_x, current_y)) % 360
             elevation_deg = math.degrees(math.atan2(height_above_stn, horizontal_dist))
 
-        # Efek Jitter Bidikan
         if idx > 1:
             azimuth_deg = (azimuth_deg + random.uniform(-0.4, 0.4)) % 360
             elevation_deg = max(0.5, min(89.5, elevation_deg + random.uniform(-0.2, 0.2)))
 
         height_display = "Awal" if idx == 1 else f"{int(height_above_stn)} ft"
 
-        # Simpan nilai numerik murni agar CSV mudah diolah
         st.session_state.generated_records.append({
             "Pembacaan Ke-": idx,
             "Tinggi Balon (ft)": height_display,
@@ -159,6 +163,9 @@ def run_generation_core(target_readings, rate_ft_min, surf_ddd, surf_ff, season,
     st.session_state.current_x = current_x
     st.session_state.current_y = current_y
     st.session_state.last_idx = target_readings
+    
+    # Otomatis arahkan panel bacaan manual ke data paling baru
+    st.session_state.active_row = target_readings
 
 # --- LAYOUT DENGAN DUA KOLOM UTAMA ---
 col_left, col_right = st.columns([7, 5], gap="large")
@@ -167,7 +174,6 @@ col_left, col_right = st.columns([7, 5], gap="large")
 with col_left:
     st.subheader("⚙️ Parameter Kontrol Pengamatan")
     
-    # Grid input parameter
     c1, c2 = st.columns(2)
     with c1:
         target_readings = st.number_input("Target Jumlah Pembacaan:", min_value=1, value=25, step=1)
@@ -181,7 +187,6 @@ with col_left:
     selected_season = st.radio("Pola Kebiasaan Musim:", season_labels, index=default_season_idx, horizontal=True)
     season_key = season_options[season_labels.index(selected_season)]
 
-    # Tombol Aksi Kiri-Kanan
     b1, b2 = st.columns(2)
     with b1:
         if st.button("⚡ Generate Baru", type="primary", use_container_width=True):
@@ -199,16 +204,7 @@ with col_left:
     if st.session_state.generated_records:
         df = pd.DataFrame(st.session_state.generated_records)
         st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        # Ekspor CSV
-        csv_buffer = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="💾 Ekspor Backup CSV",
-            data=csv_buffer,
-            file_name=f"pibal_waingapu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+        # Fitur ekspor CSV dihilangkan sesuai permintaan
     else:
         st.info("Belum ada data yang dibuat. Atur parameter lalu pilih 'Generate Baru'.")
 
@@ -216,42 +212,55 @@ with col_left:
 with col_right:
     st.subheader("🎯 Verifikasi Kelurusan Angin (Hodograph)")
     
-    # Penggambaran Grafis Hodograph
-    fig, ax = plt.subplots(figsize=(6, 6))
+    # Penggambaran Grafis Hodograph Lebih Menarik
+    fig, ax = plt.subplots(figsize=(6, 6), facecolor='#f8f9fa')
+    ax.set_facecolor('#ffffff')
     ax.set_aspect('equal')
     
-    # Lingkaran batas knot (10kt, 20kt, 30kt)
-    for knots in [10, 20, 30]:
-        circle = plt.Circle((0, 0), knots, color='#e9ecef', fill=False, linestyle='--', linewidth=1.5)
+    # Lingkaran batas kecepatan angin yang lebih jelas
+    for knots in [10, 20, 30, 40]:
+        circle = plt.Circle((0, 0), knots, color='#cbd5e1', fill=False, linestyle='-', linewidth=1)
         ax.add_patch(circle)
-        ax.text(knots - 2.5, 0.8, f"{knots}kt", color='darkgray', fontsize=8)
+        # Label dengan kotak background agar tidak bertumpuk dengan garis
+        ax.text(0, knots, f"{knots} kt", color='#64748b', fontsize=8, ha='center', va='center',
+                bbox=dict(facecolor='white', edgecolor='none', pad=2, alpha=0.8))
         
-    # Sumbu tengah
-    ax.axhline(0, color='#ddd', linestyle=':', linewidth=1)
-    ax.axvline(0, color='#ddd', linestyle=':', linewidth=1)
+    # Sumbu tengah putus-putus halus
+    ax.axhline(0, color='#94a3b8', linestyle='--', linewidth=0.8)
+    ax.axvline(0, color='#94a3b8', linestyle='--', linewidth=0.8)
     
-    # Label Arah Mata Angin
-    ax.text(0, 33, "U (N)", weight='bold', ha='center', va='bottom', color='black')
-    ax.text(0, -33, "S", weight='bold', ha='center', va='top', color='black')
-    ax.text(33, 0, "T", weight='bold', ha='left', va='center', color='black')
-    ax.text(-33, 0, "B", weight='bold', ha='right', va='center', color='black')
+    # Label Arah Mata Angin Berwarna
+    c_props = dict(boxstyle='round,pad=0.3', facecolor='#0d3b66', edgecolor='none', alpha=0.9)
+    ax.text(0, 45, "U", weight='bold', ha='center', va='center', color='white', bbox=c_props)
+    ax.text(0, -45, "S", weight='bold', ha='center', va='center', color='white', bbox=c_props)
+    ax.text(45, 0, "T", weight='bold', ha='center', va='center', color='white', bbox=c_props)
+    ax.text(-45, 0, "B", weight='bold', ha='center', va='center', color='white', bbox=c_props)
     
-    # Menggambar titik lintasan
+    # Menggambar titik lintasan dengan Gradasi Warna dan Penanda Ujung
     if st.session_state.hodo_points:
         u_pts = [p[0] for p in st.session_state.hodo_points]
         v_pts = [p[1] for p in st.session_state.hodo_points]
-        idxs = [p[2] for p in st.session_state.hodo_points]
-        colors = ["#005b96" if idx <= 25 else "#e67e22" for idx in idxs]
         
-        ax.plot(u_pts, v_pts, color='#005b96', linewidth=2, zorder=1)
-        ax.scatter(u_pts, v_pts, color=colors, edgecolor='white', s=45, zorder=2)
+        # Garis lintasan transparan
+        ax.plot(u_pts, v_pts, color='#94a3b8', linewidth=1.5, zorder=1)
         
-    ax.set_xlim(-36, 36)
-    ax.set_ylim(-36, 36)
+        # Titik pembacaan dengan gradasi warna (plasma colormap)
+        colors = [cm.plasma(i/len(u_pts)) for i in range(len(u_pts))]
+        ax.scatter(u_pts, v_pts, color=colors, edgecolor='white', s=55, zorder=2)
+        
+        # Penanda Mulai (Bawah) & Akhir (Atas)
+        ax.plot(u_pts[0], v_pts[0], marker='s', color='#10b981', markersize=9, markeredgecolor='white', zorder=3, label='Mulai (Bawah)')
+        ax.plot(u_pts[-1], v_pts[-1], marker='X', color='#ef4444', markersize=10, markeredgecolor='white', zorder=3, label='Akhir (Atas)')
+        
+        # Legenda indikator
+        ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
+        
+    ax.set_xlim(-50, 50)
+    ax.set_ylim(-50, 50)
     ax.axis('off')
     
     st.pyplot(fig)
-    plt.close(fig)  # Mencegah penumpukan objek figure di memori server
+    plt.close(fig)
     
     st.caption(status_deteksi)
     st.markdown("---")
@@ -260,18 +269,27 @@ with col_right:
     st.subheader("🔍 Panel Bantuan Ketik Manual")
     
     if st.session_state.generated_records:
-        readings_list = [r["Pembacaan Ke-"] for r in st.session_state.generated_records]
-        selected_row_idx = st.select_slider("Geser/Pilih Nomor Pembacaan:", options=readings_list, value=readings_list[-1])
+        total_rec = len(st.session_state.generated_records)
         
-        active_rec = next(item for item in st.session_state.generated_records if item["Pembacaan Ke-"] == selected_row_idx)
+        # Navigasi Panah Khusus HP
+        st.markdown("<p style='text-align:center; font-weight:bold; margin-bottom:5px;'>Navigasi Baris Form:</p>", unsafe_allow_html=True)
+        nav1, nav2, nav3 = st.columns([1, 2, 1])
+        with nav1:
+            st.button("⬅️ Mundur", on_click=prev_row, use_container_width=True)
+        with nav2:
+            st.slider("Pilih Baris", min_value=1, max_value=total_rec, key='active_row', label_visibility="collapsed")
+        with nav3:
+            st.button("Maju ➡️", on_click=next_row, use_container_width=True)
         
-        # Format angka menggunakan koma khusus untuk tampilan visual UI
+        # Ambil data spesifik sesuai nilai di session_state
+        active_rec = st.session_state.generated_records[st.session_state.active_row - 1]
+        
         azimuth_fmt = f"{active_rec['AZIMUT']:.1f}".replace('.', ',')
         elevation_fmt = f"{active_rec['ELEVASI']:.1f}".replace('.', ',')
         
         st.markdown(
             f"""
-            <div style="background-color: #fffdf0; padding: 20px; border-radius: 8px; border: 2px solid #d62828; text-align: center;">
+            <div style="background-color: #fffdf0; padding: 20px; border-radius: 8px; border: 2px solid #d62828; text-align: center; margin-top:10px;">
                 <div style="text-align: left; margin-bottom: 10px;">
                     <span style="font-size: 16px; font-weight: bold; color: #333;">Pembacaan Ke: {active_rec['Pembacaan Ke-']}</span><br>
                     <span style="font-size: 14px; font-style: italic; color: #e67e22; font-weight: bold;">Target Form: {active_rec['Level Target (BMKG)']}</span>
