@@ -5,11 +5,11 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- KONFIGURASI GLOBAL & KONSTANTA ---
-ELEVATION_WAINGAPU = 32.8  # ft
-MAX_SPEED_KT = 19.0        # Batas maksimum kecepatan angin fisiologis/realistis Waingapu
+ELEVATION_WAINGAPU = 32.8  # Elevasi Stasiun Umbu Mehang Kunda (ft)
+MAX_SPEED_KT = 19.0        # Batas maksimum kecepatan angin realistis Waingapu (kt)
 
 st.set_page_config(
     page_title="Pibal Generator Stamet Waingapu",
@@ -17,17 +17,64 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- FUNGSI DETEKSI SESI PIBAL & DETEKSI IKLIM WAINGAPU ---
+def get_waingapu_schedule_and_climate():
+    # Mengambil waktu lokal WITA (UTC+8)
+    now_wita = datetime.utcnow() + timedelta(hours=8)
+    hour = now_wita.hour
+    month = now_wita.month
+
+    # 1. Tentukan Sesi Pibal Rutin Waingapu
+    if 0 <= hour < 10:
+        session_name = "Pagi"
+        release_time = "06:00 WITA"
+        transmit_time = "00:00 UTC (08:00 WITA)"
+        default_speed = 7.0
+    elif 10 <= hour < 16:
+        session_name = "Siang"
+        release_time = "13:00 WITA"
+        transmit_time = "06:00 UTC (14:00 WITA)"
+        default_speed = 14.0
+    else:
+        session_name = "Malam"
+        release_time = "19:00 WITA"
+        transmit_time = "12:00 UTC (20:00 WITA)"
+        default_speed = 8.0
+
+    # 2. Tentukan Musim & Arah Dominan Waingapu
+    if month in [5, 6, 7, 8, 9, 10]:
+        season_name = "Musim Timur (Kemarau)"
+        default_dir = 140.0  # Dominan Angin Tenggara (SE)
+        season_desc = "Dominan Angin Pasat Tenggara (SE) khas Australia."
+    elif month in [12, 1, 2, 3]:
+        season_name = "Musim Barat (Hujan)"
+        default_dir = 290.0  # Dominan Angin Barat Laut / Barat Daya
+        season_desc = "Dominan Angin Barat Laut / Barat Daya bertiup dari Asia/Samudra Hindia."
+    else:
+        season_name = "Pancaroba"
+        default_dir = 180.0  # Arah bervariasi
+        season_desc = "Arah angin cenderung bervariasi dengan kecepatan fluktuatif."
+
+    return {
+        "now_wita": now_wita,
+        "month": month,
+        "session": session_name,
+        "release": release_time,
+        "transmit": transmit_time,
+        "season": season_name,
+        "season_desc": season_desc,
+        "default_dir": default_dir,
+        "default_speed": min(default_speed, MAX_SPEED_KT)
+    }
+
+climate_info = get_waingapu_schedule_and_climate()
+
 # --- LOAD DATASET HISTORIS UMBU MEHANG KUNDA ---
 @st.cache_data
 def load_historical_pibal():
     filename = 'Raw Pibal 2024-01-01 to 2026-07-21.csv'
     try:
-        with open(filename, 'r') as f:
-            first_line = f.readline()
-        skip = 1 if 'Raw Pibal' in first_line else 0
-        df = pd.read_csv(filename, skiprows=skip)
-        
-        # Pembersihan Data Mentah
+        df = pd.read_csv(filename)
         df = df.dropna(subset=['azimuth', 'elevasi']).copy()
         df = df[(df['azimuth'] != 9999) & (df['elevasi'] != 9999)]
         df['pembacaan'] = df['pembacaan'].astype(int)
@@ -39,19 +86,16 @@ def load_historical_pibal():
         df['datetime'] = pd.to_datetime(df['data_timestamp'])
         df['month'] = df['datetime'].dt.month
 
-        # Pre-cache metadata observasi untuk mempercepat matching algorithm
         obs_meta = df.groupby('data_timestamp').first().reset_index()[
             ['data_timestamp', 'wind_dir_surface', 'wind_speed_surface', 'month', 'datetime']
         ]
-        
         return df, obs_meta
-    except Exception as e:
-        st.warning(f"File dataset historis ({filename}) tidak ditemukan. Detail: {e}")
+    except Exception:
         return None, None
 
 df_historical, obs_metadata = load_historical_pibal()
 
-# --- INSTANSIASI STATE MEMORI SIMULASI ---
+# --- INSTANSIASI STATE MEMORI ---
 if 'generated_records' not in st.session_state:
     st.session_state.generated_records = []
 if 'hodo_points' not in st.session_state:
@@ -63,7 +107,7 @@ if 'matched_info' not in st.session_state:
 if 'active_row' not in st.session_state:
     st.session_state.active_row = 1
 
-# --- FUNGSI CALLBACK NAVIGASI MOBILE ---
+# --- CALLBACK NAVIGASI MOBILE ---
 def prev_row():
     if st.session_state.active_row > 1:
         st.session_state.active_row -= 1
@@ -75,24 +119,28 @@ def next_row():
 # --- HEADER APLIKASI ---
 st.markdown(
     f"""
-    <div style='background-color:#0d3b66; padding:15px; border-radius:8px; text-align:center; color:white; margin-bottom:20px;'>
-        <h2 style='margin:0; color:white;'>APLIKASI SIMULATOR PIBAL HISTORIS</h2>
-        <p style='margin:5px 0 0 0; font-style:italic; font-size:14px;'>Stasiun Meteorologi Umbu Mehang Kunda Waingapu (97340) | Elevasi: {ELEVATION_WAINGAPU} ft</p>
+    <div style='background-color:#0d3b66; padding:15px; border-radius:8px; text-align:center; color:white; margin-bottom:15px;'>
+        <h2 style='margin:0; color:white;'>APLIKASI SIMULATOR PIBAL HISTORIS WAINGAPU</h2>
+        <p style='margin:5px 0 0 0; font-style:italic; font-size:13px;'>
+            Stamet Umbu Mehang Kunda (97340) | Elevasi: {ELEVATION_WAINGAPU} ft | Waktu Sistem: {climate_info['now_wita'].strftime('%H:%M WITA')}
+        </p>
     </div>
     """, 
     unsafe_allow_html=True
 )
 
-# --- DETEKSI OTOMATIS MUSIM KONDISI WAINGAPU ---
-current_month = datetime.now().month
-if current_month in [5, 6, 7, 8, 9, 10]:
-    status_deteksi = f"*Deteksi Otomatis: Musim Timur / Kemarau Waingapu (Bulan {current_month}) - Dominan Angin Tenggara (SE)"
-elif current_month in [12, 1, 2, 3]:
-    status_deteksi = f"*Deteksi Otomatis: Musim Barat / Hujan Waingapu (Bulan {current_month}) - Dominan Angin Barat/Barat Daya"
-else:
-    status_deteksi = f"*Deteksi Otomatis: Pancaroba Waingapu (Bulan {current_month}) - Angin Bervariasi"
+# --- CARD STATUS OTOMATIS SESI & IKLIM ---
+st.markdown(
+    f"""
+    <div style='background-color:#eef2f6; padding:12px; border-radius:6px; border-left:5px solid #0d3b66; margin-bottom:20px; font-size:13px;'>
+        <b>📌 Deteksi Otomatis Sesi Pibal:</b> Sesi <b>{climate_info['session']}</b> (Rilis ~{climate_info['release']} | Laporan {climate_info['transmit']})<br>
+        <b>🌤️ Karakater Iklim Lokal:</b> {climate_info['season']} — <i>{climate_info['season_desc']}</i>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-# --- FUNGSI SEARCH MATCHING HISTORIS (OPTIMIZED) ---
+# --- FUNGSI MATCHING HISTORIS ---
 def find_best_historical_match(input_ddd, input_ff, input_month, obs_meta):
     if obs_meta is None or obs_meta.empty:
         return None
@@ -103,18 +151,16 @@ def find_best_historical_match(input_ddd, input_ff, input_month, obs_meta):
     angle_diff = np.degrees(np.arccos(np.clip(
         np.cos(rad_in) * np.cos(rad_hist) + np.sin(rad_in) * np.sin(rad_hist), -1.0, 1.0
     )))
-    
     speed_diff = np.abs(obs_meta['wind_speed_surface'] - input_ff)
     month_diff = np.minimum(np.abs(obs_meta['month'] - input_month), 12 - np.abs(obs_meta['month'] - input_month))
     
-    # Pembobotan disesuaikan dengan pola iklim lokal
     score = angle_diff + 5.0 * speed_diff + 3.0 * month_diff
     best_idx = score.idxmin()
     best_obs = obs_meta.loc[best_idx]
     
     return best_obs['data_timestamp'], best_obs['datetime'], best_obs['wind_dir_surface'], best_obs['wind_speed_surface']
 
-# --- FUNGSI CORE GENERATOR DATA DENGAN SANITASI FISIKA AZIMUT/ELEVASI ---
+# --- GENERATOR INTEGRASI MAJU (SMOOTH & PHYSICAL) ---
 def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=False):
     if fresh or not st.session_state.generated_records:
         st.session_state.generated_records = []
@@ -123,107 +169,94 @@ def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=Fal
         st.session_state.active_row = 1
 
     if target_readings <= st.session_state.last_idx:
-        st.warning(f"Data sudah ter-generate sebanyak {st.session_state.last_idx} baris. Naikkan target untuk melanjutkan.")
+        st.warning(f"Data sudah ter-generate sebanyak {st.session_state.last_idx} baris.")
         return
 
-    match_ts, match_dt, hist_ddd, hist_ff = None, None, surf_ddd, min(surf_ff, MAX_SPEED_KT)
+    # Cari referensi data historis
     hist_rows = []
-    
     if df_historical is not None and obs_metadata is not None:
         match_res = find_best_historical_match(surf_ddd, surf_ff, month_idx, obs_metadata)
         if match_res:
-            match_ts, match_dt, hist_ddd, hist_ff = match_res
+            match_ts, match_dt, h_ddd, h_ff = match_res
             hist_rows = df_historical[df_historical['data_timestamp'] == match_ts].sort_values('pembacaan').to_dict('records')
             dt_str = match_dt.strftime('%d %B %Y %H:%M UTC')
-            st.session_state.matched_info = f"📌 **Pola Berdasarkan Data Historis Riil:** {dt_str} (Angin Permukaan: {hist_ddd:.0f}° / {min(hist_ff, MAX_SPEED_KT):.0f} kt)"
+            st.session_state.matched_info = f"📌 **Pola Historis Acuan:** {dt_str} (Permukaan: {h_ddd:.0f}° / {min(h_ff, MAX_SPEED_KT):.0f} kt)"
         else:
-            st.session_state.matched_info = "📌 **Pola Simulasi Matematika Waingapu (Fallback)**"
+            st.session_state.matched_info = "📌 **Pola Simulasi Profil Atmosfer Waingapu (Fallback)**"
     else:
-        st.session_state.matched_info = "📌 **Pola Simulasi Matematika Waingapu (Dataset Tidak Ditemukan)**"
+        st.session_state.matched_info = "📌 **Pola Simulasi Profil Atmosfer Waingapu (Dataset Offline)**"
 
-    start_loop = st.session_state.last_idx + 1
     hist_dict = {r['pembacaan']: r for r in hist_rows}
-
-    rate_ft_min = 600.0  # Laju naik standar balon pibal BMKG
-    prev_x, prev_y = 0.0, 0.0
+    rate_ft_min = 600.0  # Laju naik balon rutin (600 ft/menit)
+    
+    # Inisialisasi Posisi Balon (x=0, y=0)
+    x_curr, y_curr = 0.0, 0.0
+    
+    # Inisialisasi Vektor Angin Permukaan (U: Timuran, V: Utaran)
+    u_surf = -surf_ff * math.sin(math.radians(surf_ddd))
+    v_surf = -surf_ff * math.cos(math.radians(surf_ddd))
+    
+    u_prev, v_prev = u_surf, v_surf
+    alpha = 0.35  # Koefisien kehalusan pergeseran angin (Smoothing Factor)
 
     for idx in range(1, target_readings + 1):
         target_level = math.ceil((idx - 1) / 2) * 1000 if idx > 1 else 0
         level_target_str = "Diabaikan (Rilis)" if idx == 1 else f"Level {target_level} ft"
         height_above_stn = 100.0 if idx == 1 else (idx - 1) * 500.0
         
-        # Ambil nilai awal dari historis / ekstrapolasi iklim lokal Waingapu
+        # 1. Tentukan Komponen Angin Raw (u_raw, v_raw)
         if idx in hist_dict:
-            raw_az = hist_dict[idx]['azimuth']
-            raw_el = hist_dict[idx]['elevasi']
+            # Rekonstruksi pergerakan dari data mentah historis
+            az_m = hist_dict[idx]['azimuth']
+            el_m = max(1.5, min(88.0, hist_dict[idx]['elevasi']))
+            d_m = height_above_stn / math.tan(math.radians(el_m))
+            x_m = d_m * math.sin(math.radians(az_m))
+            y_m = d_m * math.cos(math.radians(az_m))
+            
+            dt_step = 10.0 if idx == 1 else ((height_above_stn - ((idx - 2) * 500.0 if idx > 2 else 100.0)) / rate_ft_min) * 60.0
+            u_raw = ((x_m - x_curr) / dt_step) / 1.68781
+            v_raw = ((y_m - y_curr) / dt_step) / 1.68781
         else:
-            if len(hist_rows) > 0:
-                last_r = hist_rows[-1]
-                delta_idx = idx - last_r['pembacaan']
-                raw_az = (last_r['azimuth'] + delta_idx * random.uniform(-0.4, 0.4)) % 360
-                raw_el = max(2.0, last_r['elevasi'] - delta_idx * random.uniform(0.15, 0.25))
-            else:
-                # Fallback disesuaikan iklim Waingapu: Musim Timur (SE) vs Musim Barat (NW)
-                base_dir = 140.0 if month_idx in [5,6,7,8,9,10] else 280.0
-                raw_az = (base_dir + random.uniform(-8, 8)) % 360
-                raw_el = max(4.0, 50.0 - idx * 1.5)
+            # Profil sintetis sesuai fenomena lokal Waingapu (Veering/Backing halus)
+            shear_angle = math.radians(surf_ddd + (idx * 0.8))
+            speed_target = min(surf_ff + (idx * 0.3), MAX_SPEED_KT)
+            u_raw = -speed_target * math.sin(shear_angle)
+            v_raw = -speed_target * math.cos(shear_angle)
 
-        # --- SANITASI FISIKA: BATASI KECEPATAN MAKSIMUM 19 KNOT ---
+        # 2. Terapkan Vector Exponential Smoothing untuk Menjamin Hodograph Mulus
+        u_smooth = alpha * u_raw + (1 - alpha) * u_prev
+        v_smooth = alpha * v_raw + (1 - alpha) * v_prev
+        
+        # 3. Pembatasan Kecepatan Maksimum Strict <= 19 Knot
+        current_speed = math.hypot(u_smooth, v_smooth)
+        if current_speed > MAX_SPEED_KT:
+            scale = MAX_SPEED_KT / current_speed
+            u_smooth *= scale
+            v_smooth *= scale
+
+        u_prev, v_prev = u_smooth, v_smooth
+
+        # 4. Integrasi Maju Koordinat Posisi Balon (x, y) dalam feet
         if idx == 1:
             dt = 10.0
-            clean_az = raw_az
-            clean_el = raw_el
-            x, y = 0.0, 0.0
-            eff_surf_ff = min(surf_ff, MAX_SPEED_KT)
-            u_comp = -eff_surf_ff * math.sin(math.radians(surf_ddd))
-            v_comp = -eff_surf_ff * math.cos(math.radians(surf_ddd))
+            x_curr = u_smooth * 1.68781 * dt
+            y_curr = v_smooth * 1.68781 * dt
         else:
             prev_h = 100.0 if idx == 2 else (idx - 2) * 500.0
             dt = ((height_above_stn - prev_h) / rate_ft_min) * 60.0
-            
-            # Hitung jarak horizontal d dari elevasi mentah
-            safe_el = max(1.0, min(88.0, raw_el))
-            d = height_above_stn / math.tan(math.radians(safe_el))
-            
-            x = d * math.sin(math.radians(raw_az))
-            y = d * math.cos(math.radians(raw_az))
-            
-            dx = x - prev_x
-            dy = y - prev_y
-            dist_ft = math.hypot(dx, dy)
-            speed_kt = (dist_ft / dt) / 1.68781
-            
-            # KONTROL KETAT: Jika kecepatan > 19 Knot, rekonstruksi ulang Azimut & Elevasi
-            if speed_kt > MAX_SPEED_KT:
-                adj_dist_ft = MAX_SPEED_KT * 1.68781 * dt
-                move_dir = math.degrees(math.atan2(dx, dy)) % 360
-                
-                # Koreksi koordinat posisi horizontal balon
-                x = prev_x + adj_dist_ft * math.sin(math.radians(move_dir))
-                y = prev_y + adj_dist_ft * math.cos(math.radians(move_dir))
-                
-                d = math.hypot(x, y)
-                if d > 0:
-                    clean_az = math.degrees(math.atan2(x, y)) % 360
-                    clean_el = math.degrees(math.atan2(height_above_stn, d))
-                else:
-                    clean_az, clean_el = raw_az, raw_el
-                calc_speed_kt = MAX_SPEED_KT
-            else:
-                clean_az, clean_el = raw_az, raw_el
-                calc_speed_kt = speed_kt
+            x_curr += u_smooth * 1.68781 * dt
+            y_curr += v_smooth * 1.68781 * dt
 
-            # Kalkulasi komponen u, v untuk Hodograph (Maksimum 19 kt)
-            move_dir = math.degrees(math.atan2(x - prev_x, y - prev_y)) % 360
-            wind_dir = (move_dir + 180) % 360
-            
-            u_comp = -calc_speed_kt * math.sin(math.radians(wind_dir))
-            v_comp = -calc_speed_kt * math.cos(math.radians(wind_dir))
+        # 5. Turunkan Sudut AZIMUT dan ELEVASI Murni dari Posisi Geometris (x, y, h)
+        d_horiz = math.hypot(x_curr, y_curr)
+        if d_horiz > 0:
+            clean_az = math.degrees(math.atan2(x_curr, y_curr)) % 360
+            clean_el = math.degrees(math.atan2(height_above_stn, d_horiz))
+        else:
+            clean_az, clean_el = surf_ddd, 85.0
 
-        prev_x, prev_y = x, y
-
-        # Simpan nilai AZIMUT dan ELEVASI yang SUDAH TER-SANIKASI
-        if idx >= start_loop:
+        # Simpan Data
+        if idx > st.session_state.last_idx or fresh:
             height_display = "Awal" if idx == 1 else f"{int(height_above_stn)} ft"
             st.session_state.generated_records.append({
                 "Pembacaan Ke-": idx,
@@ -232,28 +265,37 @@ def run_generation_core(target_readings, surf_ddd, surf_ff, month_idx, fresh=Fal
                 "AZIMUT": round(clean_az, 1),
                 "ELEVASI": round(clean_el, 1)
             })
-
-        if idx >= start_loop or fresh:
-            st.session_state.hodo_points.append((u_comp, v_comp, idx))
+            st.session_state.hodo_points.append((u_smooth, v_smooth, idx))
 
     st.session_state.last_idx = target_readings
     st.session_state.active_row = target_readings
 
-# --- LAYOUT DENGAN DUA KOLOM UTAMA ---
+# --- LAYOUT DUA KOLOM ---
 col_left, col_right = st.columns([7, 5], gap="large")
 
-# === KOLOM KIRI: INPUT & TABEL DATA ===
+# === KOLOM KIRI: INPUT & TABEL ===
 with col_left:
     st.subheader("⚙️ Parameter Kontrol Pengamatan")
     
     c1, c2 = st.columns(2)
     with c1:
         target_readings = st.number_input("Target Jumlah Pembacaan:", min_value=1, value=25, step=1)
-        surf_ddd = st.number_input("Angin Permukaan ddd (°):", min_value=0.0, max_value=360.0, value=140.0, step=5.0)
+        surf_ddd = st.number_input(
+            "Angin Permukaan ddd (°):", 
+            min_value=0.0, max_value=360.0, 
+            value=float(climate_info['default_dir']), step=5.0
+        )
     with c2:
-        surf_ff = st.number_input("Kec Angin Perm ff (kt) [Max 19]:", min_value=0.0, max_value=MAX_SPEED_KT, value=8.0, step=1.0)
-        selected_month = st.selectbox("Bulan Pengamatan:", list(range(1, 13)), index=current_month-1, 
-                                      format_func=lambda x: datetime(2024, x, 1).strftime('%B'))
+        surf_ff = st.number_input(
+            "Kec Angin Perm ff (kt) [Max 19]:", 
+            min_value=0.0, max_value=MAX_SPEED_KT, 
+            value=float(climate_info['default_speed']), step=1.0
+        )
+        selected_month = st.selectbox(
+            "Bulan Pengamatan:", list(range(1, 13)), 
+            index=climate_info['month'] - 1, 
+            format_func=lambda x: datetime(2024, x, 1).strftime('%B')
+        )
 
     b1, b2 = st.columns(2)
     with b1:
@@ -272,14 +314,13 @@ with col_left:
         st.info(st.session_state.matched_info)
         
     st.subheader("📊 Tabel Hasil Pembacaan")
-    
     if st.session_state.generated_records:
-        df = pd.DataFrame(st.session_state.generated_records)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        df_out = pd.DataFrame(st.session_state.generated_records)
+        st.dataframe(df_out, use_container_width=True, hide_index=True)
     else:
-        st.info("Belum ada data yang dibuat. Atur parameter lalu pilih 'Generate dari Historis'.")
+        st.info("Belum ada data. Silakan klik 'Generate dari Historis'.")
 
-# === KOLOM KANAN: HODOGRAPH & ASISTEN FORM ===
+# === KOLOM KANAN: HODOGRAPH & PANEL HP ===
 with col_right:
     st.subheader("🎯 Verifikasi Kelurusan Angin (Hodograph)")
     
@@ -287,12 +328,12 @@ with col_right:
     ax.set_facecolor('#ffffff')
     ax.set_aspect('equal')
     
-    # Lingkaran kecepatan disesuaikan skala max 19 kt (5, 10, 15, 20 kt)
+    # Ring Kecepatan (Skala 5, 10, 15, 20 kt)
     for knots in [5, 10, 15, 20]:
         circle = plt.Circle((0, 0), knots, color='#cbd5e1', fill=False, linestyle='-', linewidth=1)
         ax.add_patch(circle)
         ax.text(0, knots, f"{knots} kt", color='#64748b', fontsize=8, ha='center', va='center',
-                bbox=dict(facecolor='white', edgecolor='none', pad=2, alpha=0.8))
+                bbox=dict(facecolor='white', edgecolor='none', pad=1.5, alpha=0.85))
         
     ax.axhline(0, color='#94a3b8', linestyle='--', linewidth=0.8)
     ax.axvline(0, color='#94a3b8', linestyle='--', linewidth=0.8)
@@ -307,9 +348,10 @@ with col_right:
         u_pts = [p[0] for p in st.session_state.hodo_points]
         v_pts = [p[1] for p in st.session_state.hodo_points]
         
-        ax.plot(u_pts, v_pts, color='#94a3b8', linewidth=1.5, zorder=1)
+        # Garis penghubung halus
+        ax.plot(u_pts, v_pts, color='#64748b', linewidth=2.0, zorder=1, alpha=0.8)
         colors = [cm.plasma(i/len(u_pts)) for i in range(len(u_pts))]
-        ax.scatter(u_pts, v_pts, color=colors, edgecolor='white', s=55, zorder=2)
+        ax.scatter(u_pts, v_pts, color=colors, edgecolor='white', s=60, zorder=2)
         
         ax.plot(u_pts[0], v_pts[0], marker='s', color='#10b981', markersize=9, markeredgecolor='white', zorder=3, label='Mulai (Bawah)')
         ax.plot(u_pts[-1], v_pts[-1], marker='X', color='#ef4444', markersize=10, markeredgecolor='white', zorder=3, label='Akhir (Atas)')
@@ -322,7 +364,6 @@ with col_right:
     st.pyplot(fig)
     plt.close(fig)
     
-    st.caption(status_deteksi)
     st.markdown("---")
     
     # --- PANEL ASISTEN KETIK MANUAL ---
@@ -347,19 +388,19 @@ with col_right:
         
         st.markdown(
             f"""
-            <div style="background-color: #fffdf0; padding: 20px; border-radius: 8px; border: 2px solid #d62828; text-align: center; margin-top:10px;">
-                <div style="text-align: left; margin-bottom: 10px;">
-                    <span style="font-size: 16px; font-weight: bold; color: #333;">Pembacaan Ke: {active_rec['Pembacaan Ke-']}</span><br>
-                    <span style="font-size: 14px; font-style: italic; color: #e67e22; font-weight: bold;">Target Form: {active_rec['Level Target (BMKG)']}</span>
+            <div style="background-color: #fffdf0; padding: 18px; border-radius: 8px; border: 2px solid #d62828; text-align: center; margin-top:10px;">
+                <div style="text-align: left; margin-bottom: 8px;">
+                    <span style="font-size: 15px; font-weight: bold; color: #333;">Pembacaan Ke: {active_rec['Pembacaan Ke-']}</span><br>
+                    <span style="font-size: 13px; font-style: italic; color: #e67e22; font-weight: bold;">Target Form: {active_rec['Level Target (BMKG)']}</span>
                 </div>
-                <div style="display: flex; justify-content: space-around; margin-top: 15px;">
+                <div style="display: flex; justify-content: space-around; margin-top: 10px;">
                     <div>
-                        <div style="color: gray; font-size: 12px; font-weight: bold; letter-spacing: 1px;">AZIMUT</div>
-                        <div style="color: #005b96; font-size: 45px; font-weight: bold; line-height: 1;">{azimuth_fmt}</div>
+                        <div style="color: gray; font-size: 11px; font-weight: bold; letter-spacing: 1px;">AZIMUT</div>
+                        <div style="color: #005b96; font-size: 42px; font-weight: bold; line-height: 1;">{azimuth_fmt}</div>
                     </div>
                     <div>
-                        <div style="color: gray; font-size: 12px; font-weight: bold; letter-spacing: 1px;">ELEVASI</div>
-                        <div style="color: #d62828; font-size: 45px; font-weight: bold; line-height: 1;">{elevation_fmt}</div>
+                        <div style="color: gray; font-size: 11px; font-weight: bold; letter-spacing: 1px;">ELEVASI</div>
+                        <div style="color: #d62828; font-size: 42px; font-weight: bold; line-height: 1;">{elevation_fmt}</div>
                     </div>
                 </div>
             </div>
